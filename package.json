@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^2.0.16",
+    "@openrouter/ai-sdk-provider": "^3.0.0",
+    "ai": "^7.0.35",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4"
