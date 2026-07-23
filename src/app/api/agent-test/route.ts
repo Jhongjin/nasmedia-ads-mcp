@@ -1,7 +1,4 @@
-import {
-  createHmac,
-  timingSafeEqual,
-} from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   generateText,
@@ -10,39 +7,16 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import {
+  getMetaAdAccountInsights,
+  listAssignedMetaAdAccounts,
+} from "@/lib/meta-marketing";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-const META_GRAPH_VERSION = "v25.0";
-const MAX_META_PAGES = 5;
-const MAX_ACCOUNTS_SENT_TO_MODEL = 20;
-
-type MetaAdAccount = {
-  id: string;
-  account_id?: string;
-  name?: string;
-  account_status?: number;
-  disable_reason?: number;
-  currency?: string;
-  timezone_name?: string;
-};
-
-type MetaApiResponse = {
-  data?: MetaAdAccount[];
-  paging?: {
-    cursors?: {
-      after?: string;
-    };
-    next?: string;
-  };
-  error?: {
-    message?: string;
-    type?: string;
-    code?: number;
-    error_subcode?: number;
-  };
-};
+const MAX_ACCOUNTS_SENT_TO_MODEL = 50;
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -77,97 +51,11 @@ function safeSecretEquals(
   );
 }
 
-async function listAssignedMetaAdAccounts(): Promise<
-  MetaAdAccount[]
-> {
-  const accessToken = getRequiredEnv(
-    "META_SYSTEM_USER_ACCESS_TOKEN",
-  );
-  const appSecret = getRequiredEnv("META_APP_SECRET");
-
-  const appSecretProof = createHmac(
-    "sha256",
-    appSecret,
-  )
-    .update(accessToken)
-    .digest("hex");
-
-  const accounts: MetaAdAccount[] = [];
-  let after: string | undefined;
-
-  for (
-    let page = 0;
-    page < MAX_META_PAGES;
-    page += 1
-  ) {
-    const url = new URL(
-      `https://graph.facebook.com/${META_GRAPH_VERSION}/me/adaccounts`,
-    );
-
-    url.searchParams.set(
-      "fields",
-      [
-        "id",
-        "account_id",
-        "name",
-        "account_status",
-        "disable_reason",
-        "currency",
-        "timezone_name",
-      ].join(","),
-    );
-
-    url.searchParams.set("limit", "100");
-    url.searchParams.set(
-      "appsecret_proof",
-      appSecretProof,
-    );
-
-    if (after) {
-      url.searchParams.set("after", after);
-    }
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      cache: "no-store",
-    });
-
-    const payload =
-      (await response.json()) as MetaApiResponse;
-
-    if (!response.ok || payload.error) {
-      const code = payload.error?.code ?? response.status;
-      const message =
-        payload.error?.message ??
-        "Meta Marketing API 호출에 실패했습니다.";
-
-      throw new Error(
-        `Meta API 오류 ${code}: ${message}`,
-      );
-    }
-
-    accounts.push(...(payload.data ?? []));
-
-    const nextAfter =
-      payload.paging?.cursors?.after;
-
-    if (!payload.paging?.next || !nextAfter) {
-      break;
-    }
-
-    after = nextAfter;
-  }
-
-  return accounts;
-}
-
 export async function POST(request: Request) {
   const expectedSecret = getRequiredEnv(
     "AGENT_TEST_SECRET",
   );
+
   const providedSecret = request.headers.get(
     "x-agent-secret",
   );
@@ -193,7 +81,7 @@ export async function POST(request: Request) {
   }
 
   let prompt =
-    "접근 가능한 Meta 광고계정의 총수와 활성·비활성 현황을 요약해 주세요. 광고계정 ID는 표시하지 마세요.";
+    "접근 가능한 Meta 광고계정의 현황을 요약해 주세요.";
 
   try {
     const body = (await request.json()) as {
@@ -225,6 +113,7 @@ export async function POST(request: Request) {
     const apiKey = getRequiredEnv(
       "OPENROUTER_API_KEY",
     );
+
     const modelName = getRequiredEnv(
       "OPENROUTER_MODEL",
     );
@@ -233,14 +122,23 @@ export async function POST(request: Request) {
       apiKey,
     });
 
+    const today = new Date()
+      .toISOString()
+      .slice(0, 10);
+
     const result = await generateText({
       model: openrouter(modelName),
 
       system: [
         "당신은 Meta 광고 데이터 분석 도우미입니다.",
+        `오늘 날짜는 ${today}입니다.`,
         "반드시 제공된 도구 실행 결과만 근거로 답하세요.",
-        "도구 결과에 없는 사실을 추정하지 마세요.",
+        "도구 결과에 없는 수치나 사실을 추정하지 마세요.",
         "사용자가 명시적으로 요청하지 않는 한 광고계정 ID는 표시하지 마세요.",
+        "광고 성과 질문에는 반드시 광고계정과 조회 기간이 필요합니다.",
+        "기간이 없으면 임의로 정하지 말고 필요한 시작일과 종료일을 요청하세요.",
+        "광고계정 이름이 모호하면 후보를 안내하고 더 정확한 이름을 요청하세요.",
+        "비용은 광고계정 통화와 함께 표시하세요.",
         "현재 도구는 조회 전용이며 광고를 생성하거나 수정할 수 없습니다.",
         "답변은 한국어로 작성하세요.",
       ].join("\n"),
@@ -250,7 +148,7 @@ export async function POST(request: Request) {
       tools: {
         listMetaAdAccounts: tool({
           description:
-            "현재 시스템 사용자에게 할당된 Meta 광고계정 목록과 활성 상태를 조회합니다.",
+            "현재 시스템 사용자에게 할당된 Meta 광고계정 목록, 활성 상태, 통화 정보를 조회합니다.",
 
           inputSchema: z.object({}),
 
@@ -258,36 +156,33 @@ export async function POST(request: Request) {
             const accounts =
               await listAssignedMetaAdAccounts();
 
-            const activeAccounts =
+            const currencyCounts =
+              accounts.reduce<Record<string, number>>(
+                (result, account) => {
+                  const currency =
+                    account.currency ?? "UNKNOWN";
+
+                  result[currency] =
+                    (result[currency] ?? 0) + 1;
+
+                  return result;
+                },
+                {},
+              );
+
+            const activeAccountCount =
               accounts.filter(
                 (account) =>
                   account.account_status === 1,
-              );
-
-            const currencies = [
-              ...new Set(
-                accounts
-                  .map(
-                    (account) =>
-                      account.currency,
-                  )
-                  .filter(
-                    (
-                      currency,
-                    ): currency is string =>
-                      Boolean(currency),
-                  ),
-              ),
-            ];
+              ).length;
 
             return {
               totalAccountCount: accounts.length,
-              activeAccountCount:
-                activeAccounts.length,
+              activeAccountCount,
               inactiveAccountCount:
                 accounts.length -
-                activeAccounts.length,
-              currencies,
+                activeAccountCount,
+              currencyCounts,
               truncated:
                 accounts.length >
                 MAX_ACCOUNTS_SENT_TO_MODEL,
@@ -313,28 +208,68 @@ export async function POST(request: Request) {
             };
           },
         }),
+
+        getMetaAdAccountInsights: tool({
+          description:
+            "특정 Meta 광고계정의 지정 기간 통합 성과를 조회합니다. 노출, 도달, 클릭, 비용, CTR, CPC, CPM, 빈도와 전환 액션을 반환합니다.",
+
+          inputSchema: z.object({
+            accountQuery: z
+              .string()
+              .min(1)
+              .max(200)
+              .describe(
+                "광고계정 이름 또는 광고계정 ID. 사용자가 입력한 표현을 사용합니다.",
+              ),
+
+            since: z
+              .string()
+              .regex(/^\d{4}-\d{2}-\d{2}$/)
+              .describe(
+                "조회 시작일, YYYY-MM-DD 형식",
+              ),
+
+            until: z
+              .string()
+              .regex(/^\d{4}-\d{2}-\d{2}$/)
+              .describe(
+                "조회 종료일, YYYY-MM-DD 형식",
+              ),
+          }),
+
+          execute: async ({
+            accountQuery,
+            since,
+            until,
+          }) => {
+            return getMetaAdAccountInsights({
+              accountQuery,
+              since,
+              until,
+            });
+          },
+        }),
       },
 
-      // 첫 호출에서는 반드시 Meta 도구를 실행하고,
-      // 두 번째 호출에서는 도구 결과를 바탕으로 답변합니다.
       prepareStep: ({ stepNumber }) => {
         if (stepNumber === 0) {
           return {
-            toolChoice: {
-              type: "tool",
-              toolName: "listMetaAdAccounts",
-            },
+            // 첫 단계에서는 목록 또는 인사이트 도구 중
+            // 하나를 반드시 선택하게 합니다.
+            toolChoice: "required",
           };
         }
 
         return {
-          toolChoice: "none",
+          // 도구 결과 확인 후 추가 도구 호출 또는
+          // 최종 답변 생성을 모델이 판단합니다.
+          toolChoice: "auto",
         };
       },
 
-      stopWhen: stepCountIs(2),
+      stopWhen: stepCountIs(4),
       temperature: 0.1,
-      maxOutputTokens: 1000,
+      maxOutputTokens: 1200,
     });
 
     return Response.json(
