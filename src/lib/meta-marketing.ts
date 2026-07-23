@@ -1,7 +1,9 @@
 import { createHmac } from "node:crypto";
 
-const META_GRAPH_VERSION = "v25.0";
-const MAX_META_PAGES = 5;
+export const META_GRAPH_VERSION = "v25.0";
+const MAX_META_PAGES = 20;
+const META_PAGE_SIZE = 100;
+const META_TIMEOUT_MS = 15_000;
 
 export type MetaAdAccount = {
   id: string;
@@ -11,7 +13,31 @@ export type MetaAdAccount = {
   disable_reason?: number;
   currency?: string;
   timezone_name?: string;
+  amount_spent?: string;
+  business?: {
+    id?: string;
+    name?: string;
+  };
 };
+
+export type MetaAdAccountListResult = {
+  accounts: MetaAdAccount[];
+  /** True means the safety page cap was reached before Meta's cursor ended. */
+  truncated: boolean;
+};
+
+export class MetaMarketingError extends Error {
+  constructor(
+    public readonly category:
+      | "configuration"
+      | "permission"
+      | "network"
+      | "upstream",
+  ) {
+    super(category);
+    this.name = "MetaMarketingError";
+  }
+}
 
 type MetaPaging = {
   cursors?: {
@@ -92,7 +118,7 @@ function getRequiredEnv(name: string): string {
   const value = process.env[name];
 
   if (!value) {
-    throw new Error(`${name} 환경변수가 설정되지 않았습니다.`);
+    throw new MetaMarketingError("configuration");
   }
 
   return value;
@@ -129,42 +155,42 @@ async function metaGet<T>(
     createAppSecretProof(accessToken, appSecret),
   );
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+  let payload: MetaApiResponse<T>;
 
-  const payload =
-    (await response.json()) as MetaApiResponse<T>;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(META_TIMEOUT_MS),
+    });
+    payload = (await response.json()) as MetaApiResponse<T>;
+  } catch {
+    throw new MetaMarketingError("network");
+  }
 
   if (!response.ok || payload.error) {
     const code = payload.error?.code ?? response.status;
-    const subcode = payload.error?.error_subcode;
-    const message =
-      payload.error?.message ??
-      "Meta Marketing API 호출에 실패했습니다.";
+    const isPermissionFailure =
+      response.status === 401 ||
+      response.status === 403 ||
+      code === 10 ||
+      code === 190 ||
+      code === 200;
 
-    const subcodeText =
-      typeof subcode === "number"
-        ? `, subcode ${subcode}`
-        : "";
-
-    throw new Error(
-      `Meta API 오류 ${code}${subcodeText}: ${message}`,
+    throw new MetaMarketingError(
+      isPermissionFailure ? "permission" : "upstream",
     );
   }
 
   return payload;
 }
 
-export async function listAssignedMetaAdAccounts(): Promise<
-  MetaAdAccount[]
-> {
+export async function getAssignedMetaAdAccounts(): Promise<MetaAdAccountListResult> {
   const accounts: MetaAdAccount[] = [];
   let after: string | undefined;
+  let truncated = false;
 
   for (
     let page = 0;
@@ -180,8 +206,10 @@ export async function listAssignedMetaAdAccounts(): Promise<
         "disable_reason",
         "currency",
         "timezone_name",
+        "amount_spent",
+        "business{id,name}",
       ].join(","),
-      limit: "100",
+      limit: String(META_PAGE_SIZE),
     };
 
     if (after) {
@@ -202,8 +230,17 @@ export async function listAssignedMetaAdAccounts(): Promise<
     }
 
     after = nextAfter;
+
+    if (page === MAX_META_PAGES - 1) {
+      truncated = true;
+    }
   }
 
+  return { accounts, truncated };
+}
+
+export async function listAssignedMetaAdAccounts(): Promise<MetaAdAccount[]> {
+  const { accounts } = await getAssignedMetaAdAccounts();
   return accounts;
 }
 
