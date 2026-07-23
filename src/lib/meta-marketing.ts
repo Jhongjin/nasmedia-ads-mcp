@@ -56,11 +56,23 @@ type MetaInsightRow = {
 };
 
 export type MetaAccountInsights = {
+  /**
+   * Meta가 해당 기간에 실제 인사이트 행을 반환했는지 여부입니다.
+   *
+   * false이면 성과가 모두 0이라는 의미가 아니라,
+   * 조회 기간에 Meta가 반환한 데이터 행이 없다는 의미입니다.
+   */
+  hasData: boolean;
+
   accountName: string;
   currency?: string;
   timezone?: string;
   dateStart: string;
   dateStop: string;
+
+  /**
+   * hasData가 false이면 null입니다.
+   */
   metrics: {
     impressions: number;
     reach: number;
@@ -70,7 +82,8 @@ export type MetaAccountInsights = {
     cpc: number;
     cpm: number;
     frequency: number;
-  };
+  } | null;
+
   actions: Record<string, number>;
   actionValues: Record<string, number>;
 };
@@ -129,11 +142,19 @@ async function metaGet<T>(
 
   if (!response.ok || payload.error) {
     const code = payload.error?.code ?? response.status;
+    const subcode = payload.error?.error_subcode;
     const message =
       payload.error?.message ??
       "Meta Marketing API 호출에 실패했습니다.";
 
-    throw new Error(`Meta API 오류 ${code}: ${message}`);
+    const subcodeText =
+      typeof subcode === "number"
+        ? `, subcode ${subcode}`
+        : "";
+
+    throw new Error(
+      `Meta API 오류 ${code}${subcodeText}: ${message}`,
+    );
   }
 
   return payload;
@@ -196,9 +217,11 @@ function normalizeAccountName(value: string): string {
 export async function findMetaAdAccount(
   accountQuery: string,
 ): Promise<MetaAdAccount> {
-  const query = normalizeAccountName(accountQuery);
+  const trimmedQuery = accountQuery.trim();
+  const normalizedQuery =
+    normalizeAccountName(trimmedQuery);
 
-  if (!query) {
+  if (!normalizedQuery) {
     throw new Error("광고계정 이름을 입력해 주세요.");
   }
 
@@ -206,17 +229,35 @@ export async function findMetaAdAccount(
 
   const exactMatches = accounts.filter(
     (account) =>
-      normalizeAccountName(account.name ?? "") === query ||
-      account.account_id === accountQuery ||
-      account.id === accountQuery,
+      normalizeAccountName(account.name ?? "") ===
+        normalizedQuery ||
+      account.account_id === trimmedQuery ||
+      account.id === trimmedQuery ||
+      account.id === `act_${trimmedQuery}`,
   );
 
   if (exactMatches.length === 1) {
     return exactMatches[0];
   }
 
+  if (exactMatches.length > 1) {
+    const candidates = exactMatches
+      .slice(0, 5)
+      .map(
+        (account) =>
+          account.name ?? "이름 없는 광고계정",
+      )
+      .join(", ");
+
+    throw new Error(
+      `광고계정 정보가 중복됩니다. 다음 중 하나를 더 정확히 입력해 주세요: ${candidates}`,
+    );
+  }
+
   const partialMatches = accounts.filter((account) =>
-    normalizeAccountName(account.name ?? "").includes(query),
+    normalizeAccountName(account.name ?? "").includes(
+      normalizedQuery,
+    ),
   );
 
   if (partialMatches.length === 1) {
@@ -226,7 +267,10 @@ export async function findMetaAdAccount(
   if (partialMatches.length > 1) {
     const candidates = partialMatches
       .slice(0, 5)
-      .map((account) => account.name ?? "이름 없는 광고계정")
+      .map(
+        (account) =>
+          account.name ?? "이름 없는 광고계정",
+      )
       .join(", ");
 
     throw new Error(
@@ -239,7 +283,10 @@ export async function findMetaAdAccount(
   );
 }
 
-function validateDate(value: string, label: string): void {
+function validateDate(
+  value: string,
+  label: string,
+): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new Error(
       `${label}은 YYYY-MM-DD 형식이어야 합니다.`,
@@ -256,7 +303,9 @@ function validateDate(value: string, label: string): void {
   }
 }
 
-function toNumber(value: string | undefined): number {
+function toNumber(
+  value: string | undefined,
+): number {
   if (!value) {
     return 0;
   }
@@ -276,7 +325,9 @@ function toMetricMap(
       continue;
     }
 
-    result[metric.action_type] = toNumber(metric.value);
+    result[metric.action_type] = toNumber(
+      metric.value,
+    );
   }
 
   return result;
@@ -331,26 +382,50 @@ export async function getMetaAdAccountInsights(input: {
 
   const row = payload.data?.[0];
 
+  /**
+   * Meta가 인사이트 행을 반환하지 않은 경우입니다.
+   *
+   * 이 경우 성과 수치가 0이라는 의미가 아니므로,
+   * metrics를 null로 반환합니다.
+   */
+  if (!row) {
+    return {
+      hasData: false,
+      accountName:
+        account.name ?? "이름 없는 광고계정",
+      currency: account.currency,
+      timezone: account.timezone_name,
+      dateStart: input.since,
+      dateStop: input.until,
+      metrics: null,
+      actions: {},
+      actionValues: {},
+    };
+  }
+
   return {
+    hasData: true,
     accountName:
-      row?.account_name ??
+      row.account_name ??
       account.name ??
       "이름 없는 광고계정",
     currency: account.currency,
     timezone: account.timezone_name,
-    dateStart: row?.date_start ?? input.since,
-    dateStop: row?.date_stop ?? input.until,
+    dateStart: row.date_start ?? input.since,
+    dateStop: row.date_stop ?? input.until,
     metrics: {
-      impressions: toNumber(row?.impressions),
-      reach: toNumber(row?.reach),
-      clicks: toNumber(row?.clicks),
-      spend: toNumber(row?.spend),
-      ctr: toNumber(row?.ctr),
-      cpc: toNumber(row?.cpc),
-      cpm: toNumber(row?.cpm),
-      frequency: toNumber(row?.frequency),
+      impressions: toNumber(row.impressions),
+      reach: toNumber(row.reach),
+      clicks: toNumber(row.clicks),
+      spend: toNumber(row.spend),
+      ctr: toNumber(row.ctr),
+      cpc: toNumber(row.cpc),
+      cpm: toNumber(row.cpm),
+      frequency: toNumber(row.frequency),
     },
-    actions: toMetricMap(row?.actions),
-    actionValues: toMetricMap(row?.action_values),
+    actions: toMetricMap(row.actions),
+    actionValues: toMetricMap(
+      row.action_values,
+    ),
   };
 }
