@@ -41,7 +41,7 @@ export async function GET() {
 
   try {
     const url = new URL(
-      "https://graph.facebook.com/me/adaccounts",
+        "https://graph.facebook.com/v25.0/me/adaccounts",
     );
 
     url.searchParams.set(
