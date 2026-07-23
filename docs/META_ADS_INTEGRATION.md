@@ -30,7 +30,6 @@ Set these only on the server or deployment platform. Do not use a `NEXT_PUBLIC_`
 | `META_APP_SECRET` | Used only to compute `appsecret_proof` |
 | `OPENROUTER_API_KEY` | Company-approved LLM provider credential |
 | `OPENROUTER_MODEL` | OpenRouter model identifier |
-| `AGENT_TEST_SECRET` | Protects the retained `/api/agent-test` utility |
 | `NASMEDIA_OPERATOR_NAME` | Optional display-only operator label until session integration exists |
 
 The dashboard must be deployed behind the company identity-aware proxy or a real application session before it is exposed beyond the internal network. This repository does not manufacture a login session. Consequently the visible logout control remains disabled until that session integration is supplied.
@@ -51,5 +50,6 @@ The field availability is based on Meta's official Business SDK AdAccount exampl
 - API responses contain only display-safe account fields and normalized error categories. They omit credentials, `appsecret_proof`, internal upstream messages, and stacks.
 - Calls time out after 15 seconds. Network, permission, configuration, and upstream failures render separately in the dashboard.
 - Current scopes are read-only. No campaign, creative, budget, or account mutation is implemented.
-- The AI Server Action validates prompt length and only returns answer text. It calls the extracted server-only OpenRouter service, so `AGENT_TEST_SECRET`, Meta credentials, and OpenRouter credentials are not sent to the client.
+- The AI Server Action validates prompt length and only returns answer text. It calls the extracted server-only OpenRouter service, so Meta credentials and OpenRouter credentials are not sent to the client. No `AGENT_TEST_SECRET` registration is required.
+- The former `/api/agent-test` test route was removed. Internal operators use `/assistant` directly, avoiding a separate secret-managed test endpoint.
 - Before public exposure, add application authentication/authorization inside the Server Action and protect `/api/dashboard/accounts` at the deployment edge. This is an explicit deployment requirement, not a simulated login state.
