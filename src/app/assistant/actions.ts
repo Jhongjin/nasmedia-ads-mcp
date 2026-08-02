@@ -1,6 +1,7 @@
 "use server";
 
 import { runMetaAssistant } from "@/lib/agent-service";
+import { getOperatorSession } from "@/lib/operator-auth";
 
 export type AssistantActionState = {
   answer?: string;
@@ -11,6 +12,12 @@ export async function askAssistant(
   _previousState: AssistantActionState,
   formData: FormData,
 ): Promise<AssistantActionState> {
+  const session = await getOperatorSession();
+
+  if (!session) {
+    return { error: "회사 SSO 로그인 후 사용할 수 있습니다." };
+  }
+
   const prompt = formData.get("prompt");
 
   if (typeof prompt !== "string" || !prompt.trim()) {

@@ -10,7 +10,7 @@ const PAGE_SIZE = 25;
 
 type DashboardResponse =
   | { ok: true; accounts: DashboardAccount[]; fetchedAt: string; truncated: boolean }
-  | { ok: false; category: "configuration" | "permission" | "network" | "upstream"; error: string };
+  | { ok: false; category: "authentication" | "configuration" | "permission" | "network" | "upstream" | "topology"; error: string };
 
 export function DashboardClient({ initialData }: { initialData: DashboardResponse }) {
   const [accounts, setAccounts] = useState<DashboardAccount[]>(initialData.ok ? initialData.accounts : []);
@@ -70,7 +70,7 @@ export function DashboardClient({ initialData }: { initialData: DashboardRespons
         <KpiCard label="고유 비즈니스 수" value={businessCount.toLocaleString("ko-KR")} detail="계정에 연결된 비즈니스" tone="slate" />
       </section>
       <AccountFilters query={query} status={status} business={business} statuses={statuses} businesses={businesses} count={filtered.length} isLoading={isLoading} fetchedAt={fetchedAt} onQueryChange={changeFilter(setQuery)} onStatusChange={changeFilter(setStatus)} onBusinessChange={changeFilter(setBusiness)} onRefresh={() => void loadAccounts()} />
-      {error ? <section className={`feedback-panel feedback-${error.category}`} role="alert"><strong>{error.category === "permission" ? "권한 확인 필요" : error.category === "network" ? "네트워크 오류" : "조회 오류"}</strong><p>{error.error}</p><button type="button" onClick={() => void loadAccounts()}>다시 시도</button></section> : null}
+      {error ? <section className={`feedback-panel feedback-${error.category}`} role="alert"><strong>{error.category === "permission" ? "권한 확인 필요" : error.category === "topology" ? "연결 구성 확인 필요" : error.category === "network" ? "네트워크 오류" : "조회 오류"}</strong><p>{error.error}</p><button type="button" onClick={() => void loadAccounts()}>다시 시도</button></section> : null}
       {!isLoading && !error && filtered.length === 0 ? <section className="empty-panel"><strong>조건에 맞는 광고계정이 없습니다.</strong><p>검색어와 상태 또는 비즈니스 필터를 조정해 보세요.</p></section> : null}
       {!error && (isLoading || filtered.length > 0) ? <section className="table-panel"><AccountTable accounts={paginated} isLoading={isLoading} />{truncated ? <p className="truncation-note">안전 상한에 도달해 일부 계정이 표시되지 않을 수 있습니다. 운영자에게 페이지 상한 조정을 요청하세요.</p> : null}</section> : null}
       {!isLoading && !error && filtered.length > PAGE_SIZE ? <nav className="pagination" aria-label="계정 목록 페이지"><button type="button" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>이전</button><span>{page} / {pageCount}</span><button type="button" disabled={page === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>다음</button></nav> : null}

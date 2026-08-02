@@ -1,8 +1,17 @@
+import { redirect } from "next/navigation";
+
 import { AssistantClient } from "@/components/assistant/assistant-client";
+import { getOperatorSession } from "@/lib/operator-auth";
 
 export const dynamic = "force-dynamic";
 
-export default function AssistantPage() {
+export default async function AssistantPage() {
+  const session = await getOperatorSession();
+
+  if (!session) {
+    redirect("/sign-in");
+  }
+
   return (
     <main className="app-shell page-content">
       <div className="page-heading compact-heading">

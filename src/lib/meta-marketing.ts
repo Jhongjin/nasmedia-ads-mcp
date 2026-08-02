@@ -1,9 +1,28 @@
+import "server-only";
+
 import { createHmac } from "node:crypto";
 
+import {
+  MAX_META_ASSET_ASSIGNMENTS_PER_SYSTEM_USER,
+  MetaConnectionConfigurationError,
+  type MetaSystemUserConnection,
+  resolveMetaSystemUserConnections,
+} from "@/lib/meta-connection-registry";
+
 export const META_GRAPH_VERSION = "v25.0";
-const MAX_META_PAGES = 20;
 const META_PAGE_SIZE = 100;
 const META_TIMEOUT_MS = 15_000;
+const MAX_META_PAGES_PER_SYSTEM_USER =
+  Math.ceil(
+    (MAX_META_ASSET_ASSIGNMENTS_PER_SYSTEM_USER + 1) /
+      META_PAGE_SIZE,
+  );
+/**
+ * Multi-pool reads must not make one request per system user at a time, but an
+ * unbounded fan-out can create a provider-rate-limit or timeout failure at
+ * company-wide account scale. Each connection still paginates serially.
+ */
+export const MAX_CONCURRENT_META_SYSTEM_USER_READS = 4;
 
 export type MetaAdAccount = {
   id: string;
@@ -26,13 +45,23 @@ export type MetaAdAccountListResult = {
   truncated: boolean;
 };
 
+type MetaRoutedAdAccount = MetaAdAccount & {
+  readonly connectionId: string;
+};
+
+type MetaRoutedAdAccountListResult = {
+  accounts: MetaRoutedAdAccount[];
+  truncated: boolean;
+};
+
 export class MetaMarketingError extends Error {
   constructor(
     public readonly category:
       | "configuration"
       | "permission"
       | "network"
-      | "upstream",
+      | "upstream"
+      | "topology",
   ) {
     super(category);
     this.name = "MetaMarketingError";
@@ -134,12 +163,11 @@ function createAppSecretProof(
 }
 
 async function metaGet<T>(
+  connection: MetaSystemUserConnection,
   path: string,
   params: Record<string, string>,
 ): Promise<MetaApiResponse<T>> {
-  const accessToken = getRequiredEnv(
-    "META_SYSTEM_USER_ACCESS_TOKEN",
-  );
+  const accessToken = connection.accessToken;
   const appSecret = getRequiredEnv("META_APP_SECRET");
 
   const url = new URL(
@@ -187,16 +215,47 @@ async function metaGet<T>(
   return payload;
 }
 
-export async function getAssignedMetaAdAccounts(): Promise<MetaAdAccountListResult> {
-  const accounts: MetaAdAccount[] = [];
+function publicAccount(account: MetaRoutedAdAccount): MetaAdAccount {
+  const { connectionId, ...safeAccount } = account;
+  void connectionId;
+  return safeAccount;
+}
+
+async function mapWithBoundedConcurrency<TInput, TOutput>(
+  inputs: readonly TInput[],
+  maximumConcurrency: number,
+  mapper: (input: TInput) => Promise<TOutput>,
+): Promise<TOutput[]> {
+  const results = new Array<TOutput>(inputs.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= inputs.length) {
+        return;
+      }
+
+      results[currentIndex] = await mapper(inputs[currentIndex]!);
+    }
+  }
+
+  const workerCount = Math.min(maximumConcurrency, inputs.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+async function getRoutedMetaAdAccountsForConnection(
+  connection: MetaSystemUserConnection,
+): Promise<MetaRoutedAdAccountListResult> {
+  const accounts: MetaRoutedAdAccount[] = [];
   let after: string | undefined;
+  let connectionAccountCount = 0;
   let truncated = false;
 
-  for (
-    let page = 0;
-    page < MAX_META_PAGES;
-    page += 1
-  ) {
+  for (let page = 0; page < MAX_META_PAGES_PER_SYSTEM_USER; page += 1) {
     const params: Record<string, string> = {
       fields: [
         "id",
@@ -217,11 +276,25 @@ export async function getAssignedMetaAdAccounts(): Promise<MetaAdAccountListResu
     }
 
     const payload = await metaGet<MetaAdAccount>(
+      connection,
       "me/adaccounts",
       params,
     );
+    const pageAccounts = payload.data ?? [];
 
-    accounts.push(...(payload.data ?? []));
+    connectionAccountCount += pageAccounts.length;
+
+    if (connectionAccountCount > MAX_META_ASSET_ASSIGNMENTS_PER_SYSTEM_USER) {
+      throw new MetaMarketingError("topology");
+    }
+
+    for (const account of pageAccounts) {
+      if (!account.id) {
+        throw new MetaMarketingError("topology");
+      }
+
+      accounts.push({ ...account, connectionId: connection.id });
+    }
 
     const nextAfter = payload.paging?.cursors?.after;
 
@@ -231,12 +304,60 @@ export async function getAssignedMetaAdAccounts(): Promise<MetaAdAccountListResu
 
     after = nextAfter;
 
-    if (page === MAX_META_PAGES - 1) {
+    if (page === MAX_META_PAGES_PER_SYSTEM_USER - 1) {
       truncated = true;
     }
   }
 
   return { accounts, truncated };
+}
+
+async function getRoutedMetaAdAccounts(): Promise<MetaRoutedAdAccountListResult> {
+  let registry;
+
+  try {
+    registry = resolveMetaSystemUserConnections();
+  } catch (error) {
+    if (error instanceof MetaConnectionConfigurationError) {
+      throw new MetaMarketingError("configuration");
+    }
+
+    throw error;
+  }
+
+  const connectionResults = await mapWithBoundedConcurrency(
+    registry.connections,
+    MAX_CONCURRENT_META_SYSTEM_USER_READS,
+    getRoutedMetaAdAccountsForConnection,
+  );
+
+  const accounts: MetaRoutedAdAccount[] = [];
+  const assignedAccountIds = new Set<string>();
+  let truncated = false;
+
+  for (const connectionResult of connectionResults) {
+    truncated ||= connectionResult.truncated;
+
+    for (const account of connectionResult.accounts) {
+      if (assignedAccountIds.has(account.id)) {
+        throw new MetaMarketingError("topology");
+      }
+
+      assignedAccountIds.add(account.id);
+      accounts.push(account);
+    }
+  }
+
+  return { accounts, truncated };
+}
+
+export async function getAssignedMetaAdAccounts(): Promise<MetaAdAccountListResult> {
+  const { accounts, truncated } = await getRoutedMetaAdAccounts();
+
+  return {
+    accounts: accounts.map(publicAccount),
+    truncated,
+  };
 }
 
 export async function listAssignedMetaAdAccounts(): Promise<MetaAdAccount[]> {
@@ -251,9 +372,9 @@ function normalizeAccountName(value: string): string {
     .replace(/\s+/g, "");
 }
 
-export async function findMetaAdAccount(
+async function findRoutedMetaAdAccount(
   accountQuery: string,
-): Promise<MetaAdAccount> {
+): Promise<MetaRoutedAdAccount> {
   const trimmedQuery = accountQuery.trim();
   const normalizedQuery =
     normalizeAccountName(trimmedQuery);
@@ -262,7 +383,7 @@ export async function findMetaAdAccount(
     throw new Error("광고계정 이름을 입력해 주세요.");
   }
 
-  const accounts = await listAssignedMetaAdAccounts();
+  const { accounts } = await getRoutedMetaAdAccounts();
 
   const exactMatches = accounts.filter(
     (account) =>
@@ -318,6 +439,12 @@ export async function findMetaAdAccount(
   throw new Error(
     `"${accountQuery}"에 해당하는 광고계정을 찾지 못했습니다.`,
   );
+}
+
+export async function findMetaAdAccount(
+  accountQuery: string,
+): Promise<MetaAdAccount> {
+  return publicAccount(await findRoutedMetaAdAccount(accountQuery));
 }
 
 function validateDate(
@@ -384,11 +511,32 @@ export async function getMetaAdAccountInsights(input: {
     );
   }
 
-  const account = await findMetaAdAccount(
+  const account = await findRoutedMetaAdAccount(
     input.accountQuery,
   );
 
+  let registry;
+
+  try {
+    registry = resolveMetaSystemUserConnections();
+  } catch (error) {
+    if (error instanceof MetaConnectionConfigurationError) {
+      throw new MetaMarketingError("configuration");
+    }
+
+    throw error;
+  }
+
+  const connection = registry.connections.find(
+    (candidate) => candidate.id === account.connectionId,
+  );
+
+  if (!connection) {
+    throw new MetaMarketingError("topology");
+  }
+
   const payload = await metaGet<MetaInsightRow>(
+    connection,
     `${account.id}/insights`,
     {
       fields: [

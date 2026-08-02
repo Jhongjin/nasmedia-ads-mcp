@@ -1,11 +1,10 @@
 import Link from "next/link";
 
 type AppHeaderProps = {
-  operatorName?: string;
+  isAuthenticated: boolean;
 };
 
-export function AppHeader({ operatorName }: AppHeaderProps) {
-  const hasSession = Boolean(operatorName);
+export function AppHeader({ isAuthenticated }: AppHeaderProps) {
 
   return (
     <header className="app-header">
@@ -18,12 +17,16 @@ export function AppHeader({ operatorName }: AppHeaderProps) {
         <nav className="main-nav" aria-label="주요 메뉴">
           <Link href="/">대시보드</Link>
           <Link href="/assistant">AI 어시스턴트</Link>
+          <Link href="/meta-access-check">권한 점검</Link>
+          <Link href="/mcp-account-governance">MCP 계정 관리</Link>
         </nav>
         <div className="operator-area">
-          <span className="operator-name">{operatorName ?? "운영자 인증 연동 필요"}</span>
-          <button className="logout-button" type="button" disabled={!hasSession} title={hasSession ? "세션 로그아웃 연동 필요" : "인증 세션이 연결되지 않았습니다."}>
-            로그아웃
-          </button>
+          <span className="operator-name">{isAuthenticated ? "회사 SSO 인증됨" : "회사 SSO 로그인 필요"}</span>
+          {isAuthenticated ? (
+            <form action="/api/auth/entra/logout" method="post">
+              <button className="logout-button" type="submit">로그아웃</button>
+            </form>
+          ) : null}
         </div>
       </div>
     </header>

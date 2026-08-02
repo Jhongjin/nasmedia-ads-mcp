@@ -1,9 +1,18 @@
+import { redirect } from "next/navigation";
+
 import { DashboardClient } from "@/components/dashboard/dashboard-client";
 import { getDashboardAccounts } from "@/lib/dashboard-service";
+import { getOperatorSession } from "@/lib/operator-auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  const session = await getOperatorSession();
+
+  if (!session) {
+    redirect("/sign-in");
+  }
+
   const initialData = await getDashboardAccounts();
   return (
     <main className="app-shell page-content">

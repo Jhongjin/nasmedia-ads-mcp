@@ -3,7 +3,12 @@ import { getAssignedMetaAdAccounts, MetaMarketingError } from "@/lib/meta-market
 
 export type DashboardApiError = {
   ok: false;
-  category: "configuration" | "permission" | "network" | "upstream";
+  category:
+    | "configuration"
+    | "permission"
+    | "network"
+    | "upstream"
+    | "topology";
   error: string;
 };
 
@@ -49,6 +54,7 @@ export async function getDashboardAccounts(): Promise<DashboardApiResponse> {
       permission: "광고계정 조회 권한이 없거나 토큰을 확인할 수 없습니다.",
       network: "Meta API에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
       upstream: "Meta API가 계정 목록을 반환하지 못했습니다.",
+      topology: "광고계정 연결 구성이 안전 기준을 충족하지 않습니다. 운영자에게 시스템 사용자 자산 배정을 확인해 달라고 요청해 주세요.",
     } as const;
     if (category === "upstream") {
       console.error("Meta dashboard account list failed.");

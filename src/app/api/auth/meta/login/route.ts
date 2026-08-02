@@ -1,6 +1,8 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 
+import { getOperatorSession } from "@/lib/operator-auth";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,19 @@ function getRequiredEnv(name: string): string {
 }
 
 export async function GET() {
+  const session = await getOperatorSession();
+
+  if (!session) {
+    return Response.json(
+      {
+        ok: false,
+        category: "authentication",
+        error: "회사 SSO 로그인이 필요합니다.",
+      },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   try {
     const appId = getRequiredEnv("META_APP_ID");
     const configId = getRequiredEnv("META_LOGIN_CONFIG_ID");
@@ -57,16 +72,13 @@ export async function GET() {
     });
 
     return response;
-  } catch (error) {
-    console.error("Meta OAuth login initialization failed:", error);
+  } catch {
+    console.error("Meta OAuth login initialization failed.");
 
     return Response.json(
       {
         ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Meta 로그인을 시작하지 못했습니다.",
+        error: "Meta 로그인을 시작하지 못했습니다.",
       },
       { status: 500 },
     );

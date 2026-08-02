@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppHeader } from "@/components/layout/app-header";
+import { getOperatorSession } from "@/lib/operator-auth";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,18 +19,20 @@ export const metadata: Metadata = {
   description: "Nasmedia 내부 운영용 Meta 광고계정 대시보드",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getOperatorSession();
+
   return (
     <html
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AppHeader operatorName={process.env.NASMEDIA_OPERATOR_NAME} />
+        <AppHeader isAuthenticated={Boolean(session)} />
         {children}
       </body>
     </html>

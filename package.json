@@ -6,15 +6,26 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:operator-auth-boundary": "node scripts/check-operator-auth-boundary.mjs",
+    "verify:operator-auth-runtime": "node scripts/verify-operator-auth-runtime.mjs",
+    "verify:meta-connection-registry": "node --experimental-strip-types scripts/verify-meta-connection-registry.mjs",
+    "verify:meta-mcp-account-governance": "node --experimental-strip-types scripts/verify-meta-mcp-account-governance.mjs",
+    "check:meta-mcp-account-policy-ledger": "node scripts/check-meta-mcp-account-policy-ledger-boundary.mjs",
+    "verify:meta-mcp-account-policy-gate": "node --experimental-strip-types scripts/verify-meta-mcp-account-policy-gate.mjs",
+    "verify:meta-mcp-account-capability-request": "node --experimental-strip-types scripts/verify-meta-mcp-account-capability-request.mjs",
+    "check:meta-mcp-policy-administration": "node scripts/check-meta-mcp-policy-administration-boundary.mjs",
+    "verify:meta-mcp-readiness-page": "node scripts/verify-meta-mcp-readiness-page.mjs"
   },
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.16",
     "@openrouter/ai-sdk-provider": "^3.0.0",
     "ai": "^7.0.35",
+    "jose": "^6.2.4",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
