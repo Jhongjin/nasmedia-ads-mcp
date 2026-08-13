@@ -7,6 +7,7 @@ import {
   type MetaProvisioningResult,
 } from "@/lib/meta-personal-access-inventory";
 import {
+  recordMetaActiveAccountProvisioningOutcome,
   runMetaRecentSpendFilterWithCandidates,
   type MetaActiveAccountScanCandidates,
 } from "@/lib/meta-active-account-scan";
@@ -314,51 +315,47 @@ export async function provisionRecentActiveAdAccounts(input: {
 }): Promise<{ recentSpendFilter: MetaActiveAccountScanCandidates["summary"]; provisioning: MetaProvisioningResult }> {
   const scan = await runMetaRecentSpendFilterWithCandidates(input);
   const candidateAccountIds = uniqueNormalizedAccountIds(scan.activeAccountIds);
+  const complete = async (provisioning: MetaProvisioningResult) => {
+    await recordMetaActiveAccountProvisioningOutcome({
+      operatorSubject: input.operatorSubject,
+      runId: scan.runId,
+      outcome: provisioning,
+    });
+    return { recentSpendFilter: scan.summary, provisioning };
+  };
 
   if (scan.summary.status !== "completed" || !candidateAccountIds) {
-    return {
-      recentSpendFilter: scan.summary,
-      provisioning: failedResult({
+    return complete(failedResult({
         candidateAccountCount: 0,
         failureCategory: "configuration",
         failureStage: "active_account_scan",
-      }),
-    };
+      }));
   }
 
   if (!input.inventory.grantedPermissions?.adsRead || !input.inventory.grantedPermissions.businessManagement) {
-    return {
-      recentSpendFilter: scan.summary,
-      provisioning: failedResult({
+    return complete(failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: "permission",
         failureStage: "permission_check",
-      }),
-    };
+      }));
   }
 
   if (candidateAccountIds.length > MAX_ACTIVE_ACCOUNTS_FOR_TWO_POOLS) {
-    return {
-      recentSpendFilter: scan.summary,
-      provisioning: failedResult({
+    return complete(failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: "configuration",
         failureStage: "capacity_check",
-      }),
-    };
+      }));
   }
 
   const configuration = getConfiguration();
 
   if (!configuration) {
-    return {
-      recentSpendFilter: scan.summary,
-      provisioning: failedResult({
+    return complete(failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: "configuration",
         failureStage: "pool_configuration",
-      }),
-    };
+      }));
   }
 
   const poolOneCandidates = candidateAccountIds.slice(0, MAX_ACTIVE_ACCOUNTS_PER_POOL);
@@ -382,14 +379,11 @@ export async function provisionRecentActiveAdAccounts(input: {
       || poolOneExisting.size + poolOneCandidates.filter((id) => !poolOneExisting.has(id)).length > MAX_ACTIVE_ACCOUNTS_PER_POOL
       || poolTwoExisting.size + poolTwoCandidates.filter((id) => !poolTwoExisting.has(id)).length > MAX_ACTIVE_ACCOUNTS_PER_POOL
     ) {
-      return {
-        recentSpendFilter: scan.summary,
-        provisioning: failedResult({
+      return complete(failedResult({
           candidateAccountCount: candidateAccountIds.length,
           failureCategory: "configuration",
           failureStage: "capacity_check",
-        }),
-      };
+        }));
     }
 
     failureStage = "pool_one_assignment";
@@ -402,9 +396,7 @@ export async function provisionRecentActiveAdAccounts(input: {
     });
 
     if (poolOne.failureCategory) {
-      return {
-        recentSpendFilter: scan.summary,
-        provisioning: {
+      return complete({
           ...failedResult({
             candidateAccountCount: candidateAccountIds.length,
             poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
@@ -412,8 +404,7 @@ export async function provisionRecentActiveAdAccounts(input: {
             failureStage: "pool_one_assignment",
           }),
           status: "partial",
-        },
-      };
+        });
     }
 
     failureStage = "pool_two_assignment";
@@ -426,9 +417,7 @@ export async function provisionRecentActiveAdAccounts(input: {
     });
 
     if (poolTwo.failureCategory) {
-      return {
-        recentSpendFilter: scan.summary,
-        provisioning: {
+      return complete({
           ...failedResult({
             candidateAccountCount: candidateAccountIds.length,
             poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
@@ -437,28 +426,21 @@ export async function provisionRecentActiveAdAccounts(input: {
             failureStage: "pool_two_assignment",
           }),
           status: "partial",
-        },
-      };
+        });
     }
 
-    return {
-      recentSpendFilter: scan.summary,
-      provisioning: {
+    return complete({
         status: "completed",
         candidateAccountCount: candidateAccountIds.length,
         poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
         poolTwoAssignedAccountCount: poolTwoExisting.size + poolTwo.assignedCount,
-      },
-    };
+      });
   } catch (error) {
-    return {
-      recentSpendFilter: scan.summary,
-      provisioning: failedResult({
+    return complete(failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: error instanceof MetaSystemUserProvisioningError ? error.category : "upstream",
         failureStage,
-      }),
-    };
+      }));
   }
 }
 

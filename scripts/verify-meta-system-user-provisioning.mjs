@@ -19,6 +19,7 @@ assert.match(source, /pool_one_assignment/);
 assert.match(source, /pool_two_assignment/);
 assert.match(source, /path: pool\.systemUserId/);
 assert.match(source, /parameters: \{ fields: "id,name" \}/);
+assert.match(source, /recordMetaActiveAccountProvisioningOutcome/);
 assert.doesNotMatch(source, /ads_management/);
 assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie/);
 assert.match(login, /META_PROVISIONING_LOGIN_CONFIG_ID/);

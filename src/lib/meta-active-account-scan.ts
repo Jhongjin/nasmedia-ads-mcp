@@ -57,6 +57,7 @@ export type MetaActiveAccountScanSummary = {
 export type MetaActiveAccountScanCandidates = {
   summary: MetaActiveAccountScanSummary;
   activeAccountIds: string[];
+  runId: string | null;
 };
 
 export class MetaActiveAccountScanError extends Error {
@@ -249,7 +250,13 @@ async function appendEvent(input: {
   configuration: DataCoreConfiguration;
   runId: string;
   operatorSubjectHash: string;
-  eventType: "scan_started" | "scan_completed" | "scan_failed";
+  eventType:
+    | "scan_started"
+    | "scan_completed"
+    | "scan_failed"
+    | "provisioning_completed"
+    | "provisioning_partial"
+    | "provisioning_failed";
   summary: Record<string, string | number | boolean>;
 }) {
   await requestDataCore<void>(input.configuration, "meta_active_account_scan_events", {
@@ -262,6 +269,52 @@ async function appendEvent(input: {
       event_summary: input.summary,
     }),
   });
+}
+
+/**
+ * Stores only the aggregate outcome for an active-account assignment. It does
+ * not store a token, account identifier, Graph response, or pool identifier.
+ */
+export async function recordMetaActiveAccountProvisioningOutcome(input: {
+  operatorSubject: string;
+  runId: string | null;
+  outcome: {
+    status: "completed" | "partial" | "failed";
+    candidateAccountCount: number;
+    poolOneAssignedAccountCount: number;
+    poolTwoAssignedAccountCount: number;
+    failureCategory?: string;
+    failureStage?: string;
+  };
+}) {
+  const configuration = getDataCoreConfiguration();
+
+  if (!configuration || !input.runId) {
+    return;
+  }
+
+  try {
+    await appendEvent({
+      configuration,
+      runId: input.runId,
+      operatorSubjectHash: createOperatorSubjectHash(input.operatorSubject),
+      eventType: `provisioning_${input.outcome.status}` as
+        | "provisioning_completed"
+        | "provisioning_partial"
+        | "provisioning_failed",
+      summary: {
+        status: input.outcome.status,
+        candidateAccountCount: input.outcome.candidateAccountCount,
+        poolOneAssignedAccountCount: input.outcome.poolOneAssignedAccountCount,
+        poolTwoAssignedAccountCount: input.outcome.poolTwoAssignedAccountCount,
+        ...(input.outcome.failureCategory ? { failureCategory: input.outcome.failureCategory } : {}),
+        ...(input.outcome.failureStage ? { failureStage: input.outcome.failureStage } : {}),
+      },
+    });
+  } catch {
+    // Assignment status remains truthful even if the optional aggregate audit
+    // record cannot be appended. No identifier or credential is logged here.
+  }
 }
 
 async function updateRun(input: {
@@ -412,6 +465,7 @@ export async function runMetaRecentSpendFilterWithCandidates(input: {
         failureCategory: "configuration",
       },
       activeAccountIds: [],
+      runId: null,
     };
   }
 
@@ -481,6 +535,7 @@ export async function runMetaRecentSpendFilterWithCandidates(input: {
         unknownAccountCount,
       },
       activeAccountIds: input.accountIds.filter((_, index) => outcomes[index]?.outcome === "active"),
+      runId,
     };
   } catch (error) {
     const failureCategory = error instanceof MetaActiveAccountScanError ? error.category : "upstream";
@@ -520,6 +575,7 @@ export async function runMetaRecentSpendFilterWithCandidates(input: {
         failureCategory,
       },
       activeAccountIds: [],
+      runId,
     };
   }
 }

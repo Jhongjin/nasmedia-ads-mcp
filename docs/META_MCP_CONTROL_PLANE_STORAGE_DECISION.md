@@ -96,13 +96,16 @@ tables are now present under `openclaw`:
 | --- | --- | --- |
 | `meta_active_account_scan_runs` | six-month spend filter window and aggregate outcomes | OAuth token, account name, raw provider response, spend amount |
 | `meta_active_account_scan_items` | encrypted account reference, keyed hash, `active`/`inactive`/`unknown` result | raw account ID, token, name, raw Insights payload |
-| `meta_active_account_scan_events` | append-only aggregate scan audit event | identifiers, credentials, provider payload |
+| `meta_active_account_scan_events` | append-only aggregate scan and provisioning audit event | identifiers, credentials, provider payload |
 
 Every new table has RLS enabled and no `anon` or `authenticated` Data API
 grant. The event table grants `service_role` only `SELECT` and `INSERT`; a
 database trigger rejects update or delete. Item records expire after 30 days.
 An account is a connection candidate only when Meta reported positive spend in
 the six-month window; ambiguous and failed reads are `unknown` and excluded.
+Provisioning audit events record only the result class, safe failure stage, and
+aggregate candidate/pool counts; they never record a selected account, OAuth
+token, system-user identifier, or Graph API response.
 
 This changes only the selection-evidence phase. The subsequent account policy
 ledger and provider capability gate remain fail-closed until their own review
