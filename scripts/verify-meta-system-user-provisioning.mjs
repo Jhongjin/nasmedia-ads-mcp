@@ -40,6 +40,10 @@ assert.doesNotMatch(implicitCompletion, /console\.(log|error)/);
 assert.match(implicitCallback, /window\.history\.replaceState/);
 assert.match(implicitCallback, /credentials: "same-origin"/);
 assert.doesNotMatch(implicitCallback, /localStorage|sessionStorage|document\.cookie/);
+assert.match(
+  await readFile(new URL("../src/lib/meta-personal-access-inventory.ts", import.meta.url), "utf8"),
+  /result\.status !== "partial"/,
+);
 
 console.log(JSON.stringify({
   serverOnlyProvisioningBoundary: true,

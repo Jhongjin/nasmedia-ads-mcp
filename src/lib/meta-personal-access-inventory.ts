@@ -592,7 +592,7 @@ export async function readMetaInventoryResultCookieValue(
       !result ||
       !payload.sub ||
       !safelyEquals(payload.sub, operatorSubject) ||
-      (result.status !== "completed" && result.status !== "failed")
+      (result.status !== "completed" && result.status !== "failed" && result.status !== "partial")
     ) {
       return null;
     }
