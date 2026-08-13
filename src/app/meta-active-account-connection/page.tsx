@@ -6,6 +6,7 @@ import {
   readMetaInventoryResultCookieValue,
 } from "@/lib/meta-personal-access-inventory";
 import { getOperatorSession } from "@/lib/operator-auth";
+import { MetaProvisioningImplicitCallback } from "./meta-provisioning-implicit-callback";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export default async function MetaActiveAccountConnectionPage() {
 
   return (
     <main className="app-shell page-content">
+      <MetaProvisioningImplicitCallback />
       <section className="page-heading">
         <p className="eyebrow">PERSONAL ADMIN ACCESS · ONE-TIME PERMISSION ASSIGNMENT</p>
         <h1>최근 집행 광고계정 연결</h1>

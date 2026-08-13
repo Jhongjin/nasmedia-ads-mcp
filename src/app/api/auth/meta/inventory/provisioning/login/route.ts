@@ -30,10 +30,13 @@ export async function GET() {
 
   try {
     const provisioningConfigId = process.env.META_PROVISIONING_LOGIN_CONFIG_ID?.trim();
+    const provisioningRedirectUri = process.env.META_PROVISIONING_REDIRECT_URI?.trim();
     const { authorizationUrl, state } = await createMetaInventoryAuthorizationRequest(
       session.subject,
-      ["ads_read", "business_management"],
+      [],
       provisioningConfigId,
+      provisioningRedirectUri,
+      "token",
     );
     const response = NextResponse.redirect(authorizationUrl);
 

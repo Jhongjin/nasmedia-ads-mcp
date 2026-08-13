@@ -424,19 +424,37 @@ export async function createMetaInventoryAuthorizationRequest(
   operatorSubject: string,
   requestedScopes: readonly ("ads_read" | "business_management")[] = [],
   loginConfigIdOverride?: string,
+  redirectUriOverride?: string,
+  responseType: "code" | "token" = "code",
 ): Promise<{
   authorizationUrl: URL;
   state: string;
 }> {
   const configuration = requireConfiguration();
+  const redirectUri = redirectUriOverride?.trim() || configuration.redirectUri;
+
+  try {
+    const parsedRedirectUri = new URL(redirectUri);
+
+    if (parsedRedirectUri.protocol !== "https:") {
+      throw new Error("invalid redirect URI");
+    }
+  } catch {
+    throw new MetaPersonalAccessInventoryError("configuration");
+  }
+
   const state = createStateValue(operatorSubject, configuration.stateSecret);
   const authorizationUrl = new URL(`https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth`);
 
   authorizationUrl.searchParams.set("client_id", configuration.appId);
-  authorizationUrl.searchParams.set("redirect_uri", configuration.redirectUri);
+  authorizationUrl.searchParams.set("redirect_uri", redirectUri);
   authorizationUrl.searchParams.set("config_id", loginConfigIdOverride?.trim() || configuration.loginConfigId);
-  authorizationUrl.searchParams.set("response_type", "code");
-  authorizationUrl.searchParams.set("override_default_response_type", "true");
+  authorizationUrl.searchParams.set("response_type", responseType);
+
+  if (responseType === "code") {
+    authorizationUrl.searchParams.set("override_default_response_type", "true");
+  }
+
   authorizationUrl.searchParams.set("state", state);
 
   const scopes = [...new Set(requestedScopes)].sort();
@@ -481,6 +499,39 @@ export async function inspectMetaPersonalAccessWithAccountIds(input: {
 
   const { accessToken, expiresIn } = await exchangeAuthorizationCode(input.code, configuration);
   const collected = await collectMetaPersonalAccess(accessToken, expiresIn, configuration);
+
+  return {
+    inventory: collected.inventory,
+    accountIds: collected.accountIds,
+    accessToken,
+    appSecret: configuration.appSecret,
+  };
+}
+
+/**
+ * Completes the user-token Business Login variation used only for a one-time
+ * asset-assignment request. The token is accepted by a server route, kept in
+ * memory for the request, and is never added to a cookie, log, or response.
+ */
+export async function inspectMetaPersonalAccessTokenWithAccountIds(input: {
+  accessToken: string;
+  expiresIn?: number;
+  returnedState: string;
+  storedState: string;
+  operatorSubject: string;
+}): Promise<{ inventory: MetaPersonalAccessInventory; accountIds: string[]; accessToken: string; appSecret: string }> {
+  const configuration = requireConfiguration();
+  const accessToken = input.accessToken.trim();
+
+  if (!accessToken || accessToken.length > 4_096) {
+    throw new MetaPersonalAccessInventoryError("authentication");
+  }
+
+  if (!validateStateValue(input.returnedState, input.storedState, input.operatorSubject, configuration.stateSecret)) {
+    throw new MetaPersonalAccessInventoryError("authentication");
+  }
+
+  const collected = await collectMetaPersonalAccess(accessToken, input.expiresIn, configuration);
 
   return {
     inventory: collected.inventory,
