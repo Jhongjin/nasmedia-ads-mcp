@@ -173,10 +173,19 @@ async function requestDataCore<T>(
       },
     });
   } catch {
+    console.error("Meta selection ledger request could not reach Data-Core", {
+      method: init.method ?? "GET",
+      resource: path.split("?", 1)[0],
+    });
     throw new MetaActiveAccountScanError("storage");
   }
 
   if (!response.ok) {
+    console.error("Meta selection ledger request was rejected by Data-Core", {
+      method: init.method ?? "GET",
+      resource: path.split("?", 1)[0],
+      status: response.status,
+    });
     throw new MetaActiveAccountScanError("storage");
   }
 
