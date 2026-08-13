@@ -23,6 +23,15 @@ const META_INVENTORY_RESULT_AUDIENCE = "nasmedia-meta-inventory-result";
 
 export const META_INVENTORY_STATE_COOKIE = "nasmedia_meta_inventory_state";
 export const META_INVENTORY_RESULT_COOKIE = "nasmedia_meta_inventory_result";
+export const META_PROVISIONING_STATE_COOKIE = "nasmedia_meta_provisioning_state";
+
+export type MetaProvisioningResult = {
+  status: "completed" | "failed" | "partial";
+  candidateAccountCount: number;
+  poolOneAssignedAccountCount: number;
+  poolTwoAssignedAccountCount: number;
+  failureCategory?: "configuration" | "permission" | "network" | "upstream";
+};
 
 export type MetaInventoryConfiguration = {
   appId: string;
@@ -85,6 +94,7 @@ export type MetaPersonalAccessInventory = {
     unknownAccountCount: number;
     failureCategory?: "configuration" | "permission" | "network" | "upstream" | "storage";
   };
+  provisioning?: MetaProvisioningResult;
 };
 
 export class MetaPersonalAccessInventoryError extends Error {
@@ -394,15 +404,26 @@ export function getMetaInventoryStateCookieOptions() {
   return getCookieOptions(META_OAUTH_STATE_SECONDS, "/api/auth/meta/inventory/callback");
 }
 
+export function getMetaProvisioningStateCookieOptions() {
+  return getCookieOptions(META_OAUTH_STATE_SECONDS, "/api/auth/meta/inventory/callback");
+}
+
 export function getMetaInventoryResultCookieOptions() {
-  return getCookieOptions(META_INVENTORY_RESULT_SECONDS, "/meta-access-check");
+  return getCookieOptions(META_INVENTORY_RESULT_SECONDS, "/");
 }
 
 export function getExpiredMetaInventoryStateCookieOptions() {
   return { ...getMetaInventoryStateCookieOptions(), maxAge: 0, expires: new Date(0) };
 }
 
-export async function createMetaInventoryAuthorizationRequest(operatorSubject: string): Promise<{
+export function getExpiredMetaProvisioningStateCookieOptions() {
+  return { ...getMetaProvisioningStateCookieOptions(), maxAge: 0, expires: new Date(0) };
+}
+
+export async function createMetaInventoryAuthorizationRequest(
+  operatorSubject: string,
+  requestedScopes: readonly ("ads_read" | "business_management")[] = [],
+): Promise<{
   authorizationUrl: URL;
   state: string;
 }> {
@@ -416,6 +437,12 @@ export async function createMetaInventoryAuthorizationRequest(operatorSubject: s
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("override_default_response_type", "true");
   authorizationUrl.searchParams.set("state", state);
+
+  const scopes = [...new Set(requestedScopes)].sort();
+
+  if (scopes.length > 0) {
+    authorizationUrl.searchParams.set("scope", scopes.join(","));
+  }
 
   return { authorizationUrl, state };
 }

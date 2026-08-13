@@ -51,6 +51,9 @@ Set these only on the server or deployment platform. Do not use a `NEXT_PUBLIC_`
 | `META_CONTROL_PLANE_SUPABASE_URL` | AdMate-Data-Core server-only URL for the recent-spend selection ledger |
 | `META_CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY` | Server-only Data-Core secret key for the selection ledger; never exposed to the browser |
 | `META_ACCOUNT_IDENTIFIER_ENCRYPTION_KEY` | 32-byte base64url key that encrypts and HMAC-links account references in the selection ledger |
+| `META_BUSINESS_ID` | Server-only Nasmedia Business Portfolio ID used only to verify the two purpose-specific advertising pools before a one-time assignment |
+| `META_ACTIVE_ACCOUNT_POOL_01_SYSTEM_USER_ID` | Server-only ID of the Employee system user named `NasmediaAdsPool01` |
+| `META_ACTIVE_ACCOUNT_POOL_02_SYSTEM_USER_ID` | Server-only ID of the Employee system user named `NasmediaAdsPool02` |
 
 The dashboard uses a real Microsoft Entra OIDC authorization-code flow with PKCE. It never accepts a shared password or manufactures a local sign-in. For an individual Microsoft account or a non-company tenant, configure `NASMEDIA_ALLOWED_ENTRA_SUBJECTS` with the exact Entra object ID of each approved operator and leave `NASMEDIA_ALLOWED_EMAIL_DOMAIN` unset. When the subject allowlist is present, an email-domain match cannot authorize a session. Until every Entra/session variable above is configured, the protected dashboard, account API, assistant Server Action, and legacy Meta OAuth initializer remain fail-closed.
 
@@ -80,6 +83,8 @@ https://<approved-origin>/api/auth/meta/inventory/callback
 ```
 
 The `/meta-access-check` screen is an operator-initiated, read-only diagnostic for a human Meta administrator account. It exchanges the returned code and keeps the personal OAuth token only in server memory for the same request. When `ads_read` is granted, it checks whether each accessible account recorded spend greater than zero for the rolling six-month UTC date window. It stores neither the OAuth token, account name, raw account ID, raw Insights response, nor spend amount. The Data-Core selection ledger retains only encrypted account references, keyed hashes, an `active`/`inactive`/`unknown` outcome, aggregate counts, and append-only audit events for 30 days. A failed or ambiguous Insights read becomes `unknown` and is excluded from automatic connection candidates. Its signed result cookie is bound to the current operator subject, lasts 15 minutes, and contains only aggregate count, permission booleans, expiry bucket, and a normalized result. The check has no campaign, budget, creative, asset, or permission mutation path.
+
+`/meta-active-account-connection` is a separate, explicit one-time assignment route. It requests only `ads_read` and `business_management` for the operator's current Meta session, repeats the recent-spend check, and assigns only accounts with `Insights.spend > 0` to the two pre-created Employee pools. It uses the `ANALYZE` task only (no `ads_management`, campaign, budget, creative, or account mutation capability). The personal token and raw account IDs remain in server memory; the result cookie contains aggregate counts only. The route verifies the configured Business Portfolio and exact pool names before it posts an assignment, fails closed above 500 candidates, and never changes the existing `Nasmedia API User 2026` or `Conversions API System User`.
 
 ## Meta data handling
 

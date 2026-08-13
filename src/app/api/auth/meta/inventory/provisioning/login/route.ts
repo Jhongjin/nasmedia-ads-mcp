@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import {
   createMetaInventoryAuthorizationRequest,
-  getMetaInventoryStateCookieOptions,
-  getExpiredMetaProvisioningStateCookieOptions,
+  getExpiredMetaInventoryStateCookieOptions,
+  getMetaProvisioningStateCookieOptions,
   META_INVENTORY_STATE_COOKIE,
   META_PROVISIONING_STATE_COOKIE,
   MetaPersonalAccessInventoryError,
@@ -13,36 +13,39 @@ import { getOperatorSession } from "@/lib/operator-auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Starts the one-time, operator-initiated active-account assignment flow.
+ * The callback is shared with inventory because the Meta Login configuration
+ * already allows that exact callback URI.
+ */
 export async function GET() {
   const session = await getOperatorSession();
 
   if (!session) {
     return Response.json(
-      {
-        ok: false,
-        category: "authentication",
-        error: "운영자 로그인이 필요합니다.",
-      },
+      { ok: false, category: "authentication", error: "운영자 로그인이 필요합니다." },
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
   }
 
   try {
-    const { authorizationUrl, state } = await createMetaInventoryAuthorizationRequest(session.subject);
+    const { authorizationUrl, state } = await createMetaInventoryAuthorizationRequest(
+      session.subject,
+      ["ads_read", "business_management"],
+    );
     const response = NextResponse.redirect(authorizationUrl);
 
     response.headers.set("Cache-Control", "no-store");
     response.cookies.set({
-      name: META_INVENTORY_STATE_COOKIE,
+      name: META_PROVISIONING_STATE_COOKIE,
       value: state,
-      ...getMetaInventoryStateCookieOptions(),
+      ...getMetaProvisioningStateCookieOptions(),
     });
     response.cookies.set({
-      name: META_PROVISIONING_STATE_COOKIE,
+      name: META_INVENTORY_STATE_COOKIE,
       value: "",
-      ...getExpiredMetaProvisioningStateCookieOptions(),
+      ...getExpiredMetaInventoryStateCookieOptions(),
     });
-
     return response;
   } catch (error) {
     const category = error instanceof MetaPersonalAccessInventoryError ? error.category : "configuration";
@@ -51,7 +54,7 @@ export async function GET() {
       {
         ok: false,
         category,
-        error: "개인 관리자 계정 읽기 전용 점검을 시작할 수 없습니다.",
+        error: "최근 집행 계정 연결을 시작할 수 없습니다.",
       },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );

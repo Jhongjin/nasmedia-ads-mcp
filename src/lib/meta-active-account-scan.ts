@@ -49,6 +49,16 @@ export type MetaActiveAccountScanSummary = {
   failureCategory?: ScanFailureCategory;
 };
 
+/**
+ * Server-only handoff for a one-time Meta asset-permission operation. Account
+ * IDs remain in process memory and must never cross an API, cookie, log, or
+ * database boundary in this shape.
+ */
+export type MetaActiveAccountScanCandidates = {
+  summary: MetaActiveAccountScanSummary;
+  activeAccountIds: string[];
+};
+
 export class MetaActiveAccountScanError extends Error {
   readonly category: ScanFailureCategory;
 
@@ -379,26 +389,29 @@ function classifyBatchResult(value: MetaBatchResponse[number] | undefined): Meta
   }
 }
 
-export async function runMetaRecentSpendFilter(input: {
+export async function runMetaRecentSpendFilterWithCandidates(input: {
   accessToken: string;
   appSecret: string;
   operatorSubject: string;
   accountIds: string[];
   inventory: MetaPersonalAccessInventory;
-}): Promise<MetaActiveAccountScanSummary> {
+}): Promise<MetaActiveAccountScanCandidates> {
   const { windowStart, windowEnd } = spendWindow();
   const configuration = getDataCoreConfiguration();
 
   if (!configuration || !input.inventory.grantedPermissions?.adsRead || input.inventory.accountListTruncated) {
     return {
-      status: "failed",
-      windowStart,
-      windowEnd,
-      totalAccountCount: input.accountIds.length,
-      activeAccountCount: 0,
-      inactiveAccountCount: 0,
-      unknownAccountCount: input.accountIds.length,
-      failureCategory: "configuration",
+      summary: {
+        status: "failed",
+        windowStart,
+        windowEnd,
+        totalAccountCount: input.accountIds.length,
+        activeAccountCount: 0,
+        inactiveAccountCount: 0,
+        unknownAccountCount: input.accountIds.length,
+        failureCategory: "configuration",
+      },
+      activeAccountIds: [],
     };
   }
 
@@ -458,13 +471,16 @@ export async function runMetaRecentSpendFilter(input: {
     });
 
     return {
-      status: "completed",
-      windowStart,
-      windowEnd,
-      totalAccountCount: input.accountIds.length,
-      activeAccountCount,
-      inactiveAccountCount,
-      unknownAccountCount,
+      summary: {
+        status: "completed",
+        windowStart,
+        windowEnd,
+        totalAccountCount: input.accountIds.length,
+        activeAccountCount,
+        inactiveAccountCount,
+        unknownAccountCount,
+      },
+      activeAccountIds: input.accountIds.filter((_, index) => outcomes[index]?.outcome === "active"),
     };
   } catch (error) {
     const failureCategory = error instanceof MetaActiveAccountScanError ? error.category : "upstream";
@@ -493,16 +509,29 @@ export async function runMetaRecentSpendFilter(input: {
     }
 
     return {
-      status: "failed",
-      windowStart,
-      windowEnd,
-      totalAccountCount: input.accountIds.length,
-      activeAccountCount: 0,
-      inactiveAccountCount: 0,
-      unknownAccountCount: input.accountIds.length,
-      failureCategory,
+      summary: {
+        status: "failed",
+        windowStart,
+        windowEnd,
+        totalAccountCount: input.accountIds.length,
+        activeAccountCount: 0,
+        inactiveAccountCount: 0,
+        unknownAccountCount: input.accountIds.length,
+        failureCategory,
+      },
+      activeAccountIds: [],
     };
   }
+}
+
+export async function runMetaRecentSpendFilter(input: {
+  accessToken: string;
+  appSecret: string;
+  operatorSubject: string;
+  accountIds: string[];
+  inventory: MetaPersonalAccessInventory;
+}): Promise<MetaActiveAccountScanSummary> {
+  return (await runMetaRecentSpendFilterWithCandidates(input)).summary;
 }
 
 export const metaActiveAccountScanInternals = {
