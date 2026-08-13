@@ -32,6 +32,7 @@ assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie/);
 assert.match(login, /META_PROVISIONING_LOGIN_CONFIG_ID/);
 assert.match(login, /META_PROVISIONING_REDIRECT_URI/);
 assert.match(login, /"token"/);
+assert.match(login, /"ads_management"/);
 assert.match(callback, /provisionRecentActiveAdAccounts/);
 assert.match(callback, /META_PROVISIONING_STATE_COOKIE/);
 

@@ -439,7 +439,7 @@ export function getExpiredMetaProvisioningStateCookieOptions() {
 
 export async function createMetaInventoryAuthorizationRequest(
   operatorSubject: string,
-  requestedScopes: readonly ("ads_read" | "business_management")[] = [],
+  requestedScopes: readonly ("ads_read" | "ads_management" | "business_management")[] = [],
   loginConfigIdOverride?: string,
   redirectUriOverride?: string,
   responseType: "code" | "token" = "code",

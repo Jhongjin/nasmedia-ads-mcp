@@ -33,7 +33,7 @@ export async function GET() {
     const provisioningRedirectUri = process.env.META_PROVISIONING_REDIRECT_URI?.trim();
     const { authorizationUrl, state } = await createMetaInventoryAuthorizationRequest(
       session.subject,
-      [],
+      ["ads_read", "ads_management", "business_management"],
       provisioningConfigId,
       provisioningRedirectUri,
       "token",

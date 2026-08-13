@@ -342,7 +342,11 @@ export async function provisionRecentActiveAdAccounts(input: {
       }));
   }
 
-  if (!input.inventory.grantedPermissions?.adsRead || !input.inventory.grantedPermissions.businessManagement) {
+  if (
+    !input.inventory.grantedPermissions?.adsRead
+    || !input.inventory.grantedPermissions.adsManagement
+    || !input.inventory.grantedPermissions.businessManagement
+  ) {
     return complete(failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: "permission",

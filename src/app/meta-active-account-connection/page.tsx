@@ -130,7 +130,7 @@ export default async function MetaActiveAccountConnectionPage() {
         <ul>
           <li>Conversions API System User 또는 기존 Nasmedia API User 2026의 자산·토큰은 변경하지 않습니다.</li>
           <li>캠페인, 광고, 예산, 크리에이티브를 생성하거나 수정하지 않습니다.</li>
-          <li>ads_management 권한은 요청하지 않으며, 연결된 계정에는 ANALYZE(성과 조회)만 부여합니다.</li>
+          <li>ads_management은 Meta가 자산 배정 API에 요구하는 이번 연결 토큰 권한으로만 사용하며, 연결된 계정에는 ANALYZE(성과 조회)만 부여합니다.</li>
           <li>개인 관리자 OAuth 토큰과 광고계정 식별자는 브라우저·쿠키·로그에 저장하거나 표시하지 않습니다.</li>
         </ul>
       </section>
