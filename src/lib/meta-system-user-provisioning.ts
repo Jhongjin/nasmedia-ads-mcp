@@ -144,6 +144,7 @@ async function graphBatchPost(input: {
 }
 
 async function assignAccounts(input: {
+  businessId: string;
   systemUserId: string;
   accountIds: string[];
   existingAccountIds: Set<string>;
@@ -165,6 +166,7 @@ async function assignAccounts(input: {
         method: "POST" as const,
         relative_url: `${accountId}/assigned_users`,
         body: new URLSearchParams({
+          business: input.businessId,
           user: input.systemUserId,
           tasks: JSON.stringify(["ANALYZE"]),
         }).toString(),
@@ -285,6 +287,7 @@ export async function provisionRecentActiveAdAccounts(input: {
     // prevents progress beyond that pool.
     failureStage = "pool_one_assignment";
     const poolOne = await assignAccounts({
+      businessId: configuration.businessId,
       systemUserId: configuration.pools[0].systemUserId,
       accountIds: poolOneCandidates,
       existingAccountIds: new Set(),
@@ -307,6 +310,7 @@ export async function provisionRecentActiveAdAccounts(input: {
 
     failureStage = "pool_two_assignment";
     const poolTwo = await assignAccounts({
+      businessId: configuration.businessId,
       systemUserId: configuration.pools[1].systemUserId,
       accountIds: poolTwoCandidates,
       existingAccountIds: new Set(),

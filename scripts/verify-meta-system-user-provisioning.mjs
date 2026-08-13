@@ -12,6 +12,7 @@ assert.match(source, /NasmediaAdsPool01/);
 assert.match(source, /NasmediaAdsPool02/);
 assert.match(source, /tasks: JSON\.stringify\(\["ANALYZE"\]\)/);
 assert.match(source, /assigned_users/);
+assert.match(source, /business: input\.businessId/);
 assert.match(source, /META_BUSINESS_ID/);
 assert.match(source, /failureStage/);
 assert.doesNotMatch(source, /pool_validation/);
