@@ -44,6 +44,10 @@ assert.match(
   await readFile(new URL("../src/lib/meta-personal-access-inventory.ts", import.meta.url), "utf8"),
   /result\.status !== "partial"/,
 );
+assert.match(
+  await readFile(new URL("../src/lib/meta-personal-access-inventory.ts", import.meta.url), "utf8"),
+  /getCookieOptions\(META_OAUTH_STATE_SECONDS, "\/api\/auth\/meta\/inventory"\)/,
+);
 
 console.log(JSON.stringify({
   serverOnlyProvisioningBoundary: true,

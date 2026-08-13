@@ -414,7 +414,9 @@ export function getMetaInventoryStateCookieOptions() {
 }
 
 export function getMetaProvisioningStateCookieOptions() {
-  return getCookieOptions(META_OAUTH_STATE_SECONDS, "/api/auth/meta/inventory/callback");
+  // The provisioning flow may complete through either the legacy code callback
+  // or the same-origin implicit-token completion route.
+  return getCookieOptions(META_OAUTH_STATE_SECONDS, "/api/auth/meta/inventory");
 }
 
 export function getMetaInventoryResultCookieOptions() {
