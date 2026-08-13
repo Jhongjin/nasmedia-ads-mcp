@@ -177,22 +177,23 @@ async function verifyPools(input: {
   accessToken: string;
   appSecret: string;
 }) {
-  const response = await graphGet<GraphListResponse<{ id?: string; name?: string; role?: string }>>({
-    path: `${input.configuration.businessId}/system_users`,
-    accessToken: input.accessToken,
-    appSecret: input.appSecret,
-    parameters: { fields: "id,name,role", limit: "100" },
-  });
-  const users = new Map(
-    (response.data ?? [])
-      .filter((user): user is Required<typeof user> => Boolean(user.id && user.name && user.role))
-      .map((user) => [user.id, user]),
-  );
+  // The business-wide list edge can omit recently-created Employee users even
+  // though their direct node is available to an administrator token. Validate
+  // the two explicitly configured pools by immutable ID and expected name.
+  // Their Employee role is additionally verified in Business Suite before the
+  // IDs are configured; this path never discovers or selects arbitrary users.
+  const users = await Promise.all(input.configuration.pools.map(async (pool) => ({
+    pool,
+    user: await graphGet<{ id?: string; name?: string }>({
+      path: pool.systemUserId,
+      accessToken: input.accessToken,
+      appSecret: input.appSecret,
+      parameters: { fields: "id,name" },
+    }),
+  })));
 
-  for (const pool of input.configuration.pools) {
-    const user = users.get(pool.systemUserId);
-
-    if (!user || user.name !== pool.expectedName || user.role !== "EMPLOYEE") {
+  for (const { pool, user } of users) {
+    if (user.id !== pool.systemUserId || user.name !== pool.expectedName) {
       throw new MetaSystemUserProvisioningError("configuration");
     }
   }
