@@ -36,6 +36,7 @@ export type MetaProvisioningResult = {
    * diagnosis and never includes a Graph response, account reference, or token.
    */
   providerErrorCode?: number;
+  providerErrorReason?: "invalid_user" | "business_scope" | "unsupported_edge" | "invalid_parameter" | "other";
   failureStage?:
     | "active_account_scan"
     | "permission_check"

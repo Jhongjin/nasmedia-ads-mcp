@@ -46,6 +46,7 @@ type GraphBatchResponse = Array<{
 
 type ProvisioningFailureCategory = NonNullable<MetaProvisioningResult["failureCategory"]>;
 type ProvisioningFailureStage = NonNullable<MetaProvisioningResult["failureStage"]>;
+type ProviderErrorReason = NonNullable<MetaProvisioningResult["providerErrorReason"]>;
 
 class MetaSystemUserProvisioningError extends Error {
   constructor(readonly category: ProvisioningFailureCategory) {
@@ -96,6 +97,33 @@ function getGraphBatchProviderErrorCode(entry: GraphBatchResponse[number]): numb
       : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function getGraphBatchProviderErrorReason(entry: GraphBatchResponse[number]): ProviderErrorReason | undefined {
+  if (entry.code === 200 || !entry.body) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(entry.body) as { error?: { message?: unknown } };
+    const message = typeof parsed.error?.message === "string" ? parsed.error.message.toLowerCase() : "";
+
+    if (/user.+valid|valid.+user|user.+id/.test(message)) {
+      return "invalid_user";
+    }
+
+    if (/business.+(id|scope)|business.+permission/.test(message)) {
+      return "business_scope";
+    }
+
+    if (/unsupported post|does not support this operation/.test(message)) {
+      return "unsupported_edge";
+    }
+
+    return /invalid parameter/.test(message) ? "invalid_parameter" : "other";
+  } catch {
+    return "other";
   }
 }
 
@@ -221,6 +249,7 @@ async function assignAccounts(input: {
   assignedCount: number;
   failureCategory?: ProvisioningFailureCategory;
   providerErrorCode?: number;
+  providerErrorReason?: ProviderErrorReason;
 }> {
   const unassigned = input.accountIds.filter((accountId) => !input.existingAccountIds.has(accountId));
 
@@ -253,6 +282,7 @@ async function assignAccounts(input: {
           ? "permission"
           : "upstream",
         ...(failedEntry ? { providerErrorCode: getGraphBatchProviderErrorCode(failedEntry) } : {}),
+        ...(failedEntry ? { providerErrorReason: getGraphBatchProviderErrorReason(failedEntry) } : {}),
       };
     }
   }
@@ -267,6 +297,7 @@ function failedResult(input: {
   poolOneAssignedAccountCount?: number;
   poolTwoAssignedAccountCount?: number;
   providerErrorCode?: number;
+  providerErrorReason?: ProviderErrorReason;
 }): MetaProvisioningResult {
   return {
     status: "failed",
@@ -276,6 +307,7 @@ function failedResult(input: {
     failureCategory: input.failureCategory,
     failureStage: input.failureStage,
     ...(input.providerErrorCode !== undefined ? { providerErrorCode: input.providerErrorCode } : {}),
+    ...(input.providerErrorReason ? { providerErrorReason: input.providerErrorReason } : {}),
   };
 }
 
@@ -379,6 +411,7 @@ export async function provisionRecentActiveAdAccounts(input: {
             failureCategory: poolOne.failureCategory,
             failureStage: "pool_one_assignment",
             providerErrorCode: poolOne.providerErrorCode,
+            providerErrorReason: poolOne.providerErrorReason,
           }),
           status: "partial",
         });
@@ -403,6 +436,7 @@ export async function provisionRecentActiveAdAccounts(input: {
             failureCategory: poolTwo.failureCategory,
             failureStage: "pool_two_assignment",
             providerErrorCode: poolTwo.providerErrorCode,
+            providerErrorReason: poolTwo.providerErrorReason,
           }),
           status: "partial",
         });

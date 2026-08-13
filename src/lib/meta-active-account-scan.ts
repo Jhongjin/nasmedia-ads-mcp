@@ -285,6 +285,7 @@ export async function recordMetaActiveAccountProvisioningOutcome(input: {
     poolTwoAssignedAccountCount: number;
     failureCategory?: string;
     providerErrorCode?: number;
+    providerErrorReason?: string;
     failureStage?: string;
   };
 }) {
@@ -310,6 +311,7 @@ export async function recordMetaActiveAccountProvisioningOutcome(input: {
         poolTwoAssignedAccountCount: input.outcome.poolTwoAssignedAccountCount,
         ...(input.outcome.failureCategory ? { failureCategory: input.outcome.failureCategory } : {}),
         ...(input.outcome.providerErrorCode !== undefined ? { providerErrorCode: input.outcome.providerErrorCode } : {}),
+        ...(input.outcome.providerErrorReason ? { providerErrorReason: input.outcome.providerErrorReason } : {}),
         ...(input.outcome.failureStage ? { failureStage: input.outcome.failureStage } : {}),
       },
     });

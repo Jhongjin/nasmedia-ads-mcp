@@ -105,7 +105,7 @@ An account is a connection candidate only when Meta reported positive spend in
 the six-month window; ambiguous and failed reads are `unknown` and excluded.
 Provisioning audit events record only the result class, safe failure stage,
 aggregate candidate/pool counts, and (on failure) a numeric provider error
-code. They never record a selected account, OAuth token, system-user
+code plus a fixed safe reason category. They never record a selected account, OAuth token, system-user
 identifier, or Graph API response.
 
 This changes only the selection-evidence phase. The subsequent account policy
