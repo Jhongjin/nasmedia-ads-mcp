@@ -46,6 +46,7 @@ Set these only on the server or deployment platform. Do not use a `NEXT_PUBLIC_`
 | `NASMEDIA_SESSION_SECRET` | High-entropy secret used to sign the short-lived HttpOnly operator session |
 | `META_APP_ID` | Meta app ID used only for the operator-initiated personal-access inventory check |
 | `META_LOGIN_CONFIG_ID` | Approved Meta Login configuration ID for the inventory check |
+| `META_PROVISIONING_LOGIN_CONFIG_ID` | Optional dedicated Meta Login configuration ID for the one-time recent-active-account assignment. It must allow only `ads_read` and `business_management`; when unset, the inventory configuration is used. |
 | `META_OAUTH_REDIRECT_URI` | Preferred exact Meta Login callback URL for the personal-access inventory check; `META_REDIRECT_URI` is a temporary fallback |
 | `META_OAUTH_STATE_SECRET` | High-entropy secret that binds the short-lived Meta OAuth state to the current company SSO subject |
 | `META_CONTROL_PLANE_SUPABASE_URL` | AdMate-Data-Core server-only URL for the recent-spend selection ledger |

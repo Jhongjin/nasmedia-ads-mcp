@@ -423,6 +423,7 @@ export function getExpiredMetaProvisioningStateCookieOptions() {
 export async function createMetaInventoryAuthorizationRequest(
   operatorSubject: string,
   requestedScopes: readonly ("ads_read" | "business_management")[] = [],
+  loginConfigIdOverride?: string,
 ): Promise<{
   authorizationUrl: URL;
   state: string;
@@ -433,7 +434,7 @@ export async function createMetaInventoryAuthorizationRequest(
 
   authorizationUrl.searchParams.set("client_id", configuration.appId);
   authorizationUrl.searchParams.set("redirect_uri", configuration.redirectUri);
-  authorizationUrl.searchParams.set("config_id", configuration.loginConfigId);
+  authorizationUrl.searchParams.set("config_id", loginConfigIdOverride?.trim() || configuration.loginConfigId);
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("override_default_response_type", "true");
   authorizationUrl.searchParams.set("state", state);

@@ -16,6 +16,7 @@ assert.match(source, /META_BUSINESS_ID/);
 assert.doesNotMatch(source, /ads_management/);
 assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie/);
 assert.match(login, /\["ads_read", "business_management"\]/);
+assert.match(login, /META_PROVISIONING_LOGIN_CONFIG_ID/);
 assert.match(callback, /provisionRecentActiveAdAccounts/);
 assert.match(callback, /META_PROVISIONING_STATE_COOKIE/);
 
