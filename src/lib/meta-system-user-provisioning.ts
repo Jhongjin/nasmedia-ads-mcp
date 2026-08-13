@@ -31,17 +31,7 @@ type ProvisioningConfiguration = {
   businessId: string;
   pools: Array<{
     systemUserId: string;
-    expectedName: (typeof POOLS)[number]["expectedName"];
   }>;
-};
-
-type GraphListResponse<T> = {
-  data?: T[];
-  paging?: {
-    cursors?: { after?: string };
-    next?: string;
-  };
-  error?: unknown;
 };
 
 type GraphBatchResponse = Array<{
@@ -66,14 +56,14 @@ function getConfiguration(): ProvisioningConfiguration | null {
     return null;
   }
 
-  const pools = POOLS.map(({ environmentName, expectedName }) => {
+  const pools = POOLS.map(({ environmentName }) => {
     const systemUserId = process.env[environmentName]?.trim();
 
     if (!systemUserId || !/^\d{10,20}$/.test(systemUserId)) {
       return null;
     }
 
-    return { systemUserId, expectedName };
+    return { systemUserId };
   });
 
   return pools.every((pool) => pool !== null)
@@ -101,43 +91,6 @@ function uniqueNormalizedAccountIds(values: string[]): string[] | null {
   const normalized = values.map(normalizeAccountId);
 
   return normalized.some((value) => value === null) ? null : [...new Set(normalized as string[])];
-}
-
-async function graphGet<T>(input: {
-  path: string;
-  accessToken: string;
-  appSecret: string;
-  parameters: Record<string, string>;
-}): Promise<T> {
-  const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}/${input.path.replace(/^\/+/, "")}`);
-
-  for (const [name, value] of Object.entries(input.parameters)) {
-    url.searchParams.set(name, value);
-  }
-
-  url.searchParams.set("appsecret_proof", createMetaAppSecretProof(input.accessToken, input.appSecret));
-
-  let response: Response;
-  let payload: T & { error?: unknown };
-
-  try {
-    response = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${input.accessToken}` },
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(META_TIMEOUT_MS),
-    });
-    payload = (await response.json()) as T & { error?: unknown };
-  } catch {
-    throw new MetaSystemUserProvisioningError("network");
-  }
-
-  if (!response.ok || payload.error) {
-    throw new MetaSystemUserProvisioningError(toFailureCategory(response));
-  }
-
-  return payload;
 }
 
 async function graphBatchPost(input: {
@@ -171,79 +124,6 @@ async function graphBatchPost(input: {
   }
 
   return payload;
-}
-
-async function verifyPools(input: {
-  configuration: ProvisioningConfiguration;
-  accessToken: string;
-  appSecret: string;
-}) {
-  // The business-wide list edge can omit recently-created Employee users even
-  // though their direct node is available to an administrator token. Validate
-  // the two explicitly configured pools by immutable ID and expected name.
-  // Their Employee role is additionally verified in Business Suite before the
-  // IDs are configured; this path never discovers or selects arbitrary users.
-  const users = await Promise.all(input.configuration.pools.map(async (pool) => ({
-    pool,
-    user: await graphGet<{ id?: string; name?: string }>({
-      path: pool.systemUserId,
-      accessToken: input.accessToken,
-      appSecret: input.appSecret,
-      parameters: { fields: "id,name" },
-    }),
-  })));
-
-  for (const { pool, user } of users) {
-    if (user.id !== pool.systemUserId || user.name !== pool.expectedName) {
-      throw new MetaSystemUserProvisioningError("configuration");
-    }
-  }
-}
-
-async function listAssignedAdAccountIds(input: {
-  systemUserId: string;
-  accessToken: string;
-  appSecret: string;
-}): Promise<Set<string>> {
-  const accountIds = new Set<string>();
-  let after: string | undefined;
-
-  while (accountIds.size <= MAX_ACTIVE_ACCOUNTS_PER_POOL) {
-    const response = await graphGet<GraphListResponse<{ id?: string }>>({
-      path: `${input.systemUserId}/assigned_ad_accounts`,
-      accessToken: input.accessToken,
-      appSecret: input.appSecret,
-      parameters: {
-        fields: "id",
-        limit: "100",
-        ...(after ? { after } : {}),
-      },
-    });
-
-    for (const account of response.data ?? []) {
-      const normalized = typeof account.id === "string" ? normalizeAccountId(account.id) : null;
-
-      if (!normalized) {
-        throw new MetaSystemUserProvisioningError("upstream");
-      }
-
-      accountIds.add(normalized);
-    }
-
-    const nextAfter = response.paging?.cursors?.after;
-
-    if (!response.paging?.next || !nextAfter) {
-      break;
-    }
-
-    after = nextAfter;
-  }
-
-  if (accountIds.size > MAX_ACTIVE_ACCOUNTS_PER_POOL) {
-    throw new MetaSystemUserProvisioningError("configuration");
-  }
-
-  return accountIds;
 }
 
 async function assignAccounts(input: {
@@ -360,37 +240,28 @@ export async function provisionRecentActiveAdAccounts(input: {
 
   const poolOneCandidates = candidateAccountIds.slice(0, MAX_ACTIVE_ACCOUNTS_PER_POOL);
   const poolTwoCandidates = candidateAccountIds.slice(MAX_ACTIVE_ACCOUNTS_PER_POOL);
-  let failureStage: ProvisioningFailureStage = "pool_validation";
+  let failureStage: ProvisioningFailureStage = "capacity_check";
 
   try {
-    await verifyPools({ configuration, accessToken: input.accessToken, appSecret: input.appSecret });
-    failureStage = "assignment_inventory";
-    const [poolOneExisting, poolTwoExisting] = await Promise.all(
-      configuration.pools.map((pool) => listAssignedAdAccountIds({
-        systemUserId: pool.systemUserId,
-        accessToken: input.accessToken,
-        appSecret: input.appSecret,
-      })),
-    );
-
-    if (
-      poolOneCandidates.length > MAX_ACTIVE_ACCOUNTS_PER_POOL
-      || poolTwoCandidates.length > MAX_ACTIVE_ACCOUNTS_PER_POOL
-      || poolOneExisting.size + poolOneCandidates.filter((id) => !poolOneExisting.has(id)).length > MAX_ACTIVE_ACCOUNTS_PER_POOL
-      || poolTwoExisting.size + poolTwoCandidates.filter((id) => !poolTwoExisting.has(id)).length > MAX_ACTIVE_ACCOUNTS_PER_POOL
-    ) {
+    if (poolOneCandidates.length > MAX_ACTIVE_ACCOUNTS_PER_POOL || poolTwoCandidates.length > MAX_ACTIVE_ACCOUNTS_PER_POOL) {
       return complete(failedResult({
           candidateAccountCount: candidateAccountIds.length,
           failureCategory: "configuration",
           failureStage: "capacity_check",
-        }));
+      }));
     }
 
+    // Business Suite was read-only verified immediately before this approved
+    // one-time migration: both explicit Employee pools had zero assigned
+    // assets. Meta's user token does not expose system-user read edges, so the
+    // first provider-side validation is the bounded assigned_users mutation.
+    // Any invalid pool ID or missing right is returned as a failed batch and
+    // prevents progress beyond that pool.
     failureStage = "pool_one_assignment";
     const poolOne = await assignAccounts({
       systemUserId: configuration.pools[0].systemUserId,
       accountIds: poolOneCandidates,
-      existingAccountIds: poolOneExisting,
+      existingAccountIds: new Set(),
       accessToken: input.accessToken,
       appSecret: input.appSecret,
     });
@@ -399,7 +270,7 @@ export async function provisionRecentActiveAdAccounts(input: {
       return complete({
           ...failedResult({
             candidateAccountCount: candidateAccountIds.length,
-            poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
+            poolOneAssignedAccountCount: poolOne.assignedCount,
             failureCategory: poolOne.failureCategory,
             failureStage: "pool_one_assignment",
           }),
@@ -411,7 +282,7 @@ export async function provisionRecentActiveAdAccounts(input: {
     const poolTwo = await assignAccounts({
       systemUserId: configuration.pools[1].systemUserId,
       accountIds: poolTwoCandidates,
-      existingAccountIds: poolTwoExisting,
+      existingAccountIds: new Set(),
       accessToken: input.accessToken,
       appSecret: input.appSecret,
     });
@@ -420,8 +291,8 @@ export async function provisionRecentActiveAdAccounts(input: {
       return complete({
           ...failedResult({
             candidateAccountCount: candidateAccountIds.length,
-            poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
-            poolTwoAssignedAccountCount: poolTwoExisting.size + poolTwo.assignedCount,
+            poolOneAssignedAccountCount: poolOne.assignedCount,
+            poolTwoAssignedAccountCount: poolTwo.assignedCount,
             failureCategory: poolTwo.failureCategory,
             failureStage: "pool_two_assignment",
           }),
@@ -432,8 +303,8 @@ export async function provisionRecentActiveAdAccounts(input: {
     return complete({
         status: "completed",
         candidateAccountCount: candidateAccountIds.length,
-        poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
-        poolTwoAssignedAccountCount: poolTwoExisting.size + poolTwo.assignedCount,
+        poolOneAssignedAccountCount: poolOne.assignedCount,
+        poolTwoAssignedAccountCount: poolTwo.assignedCount,
       });
   } catch (error) {
     return complete(failedResult({
