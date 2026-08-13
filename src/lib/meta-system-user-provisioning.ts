@@ -30,8 +30,13 @@ const POOLS = [
 type ProvisioningConfiguration = {
   businessId: string;
   pools: Array<{
-    systemUserId: string;
+    expectedName: (typeof POOLS)[number]["expectedName"];
   }>;
+};
+
+type GraphListResponse<T> = {
+  data?: T[];
+  error?: unknown;
 };
 
 type GraphBatchResponse = Array<{
@@ -56,14 +61,14 @@ function getConfiguration(): ProvisioningConfiguration | null {
     return null;
   }
 
-  const pools = POOLS.map(({ environmentName }) => {
+  const pools = POOLS.map(({ environmentName, expectedName }) => {
     const systemUserId = process.env[environmentName]?.trim();
 
     if (!systemUserId || !/^\d{10,20}$/.test(systemUserId)) {
       return null;
     }
 
-    return { systemUserId };
+    return { expectedName };
   });
 
   return pools.every((pool) => pool !== null)
@@ -108,6 +113,68 @@ function uniqueNormalizedAccountIds(values: string[]): string[] | null {
   const normalized = values.map(normalizeAccountId);
 
   return normalized.some((value) => value === null) ? null : [...new Set(normalized as string[])];
+}
+
+async function graphGet<T>(input: {
+  path: string;
+  accessToken: string;
+  appSecret: string;
+  parameters: Record<string, string>;
+}): Promise<T> {
+  const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}/${input.path.replace(/^\/+/, "")}`);
+
+  for (const [name, value] of Object.entries(input.parameters)) {
+    url.searchParams.set(name, value);
+  }
+
+  url.searchParams.set("appsecret_proof", createMetaAppSecretProof(input.accessToken, input.appSecret));
+
+  let response: Response;
+  let payload: T & { error?: unknown };
+
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${input.accessToken}` },
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(META_TIMEOUT_MS),
+    });
+    payload = (await response.json()) as T & { error?: unknown };
+  } catch {
+    throw new MetaSystemUserProvisioningError("network");
+  }
+
+  if (!response.ok || payload.error) {
+    throw new MetaSystemUserProvisioningError(toFailureCategory(response));
+  }
+
+  return payload;
+}
+
+async function resolveAppScopedPools(input: {
+  configuration: ProvisioningConfiguration;
+  accessToken: string;
+  appSecret: string;
+}): Promise<Array<{ systemUserId: string }>> {
+  const response = await graphGet<GraphListResponse<{ id?: string; name?: string; role?: string }>>({
+    path: `${input.configuration.businessId}/system_users`,
+    accessToken: input.accessToken,
+    appSecret: input.appSecret,
+    parameters: { fields: "id,name,role", limit: "100" },
+  });
+  const eligibleUsers = new Map(
+    (response.data ?? [])
+      .filter((user): user is Required<typeof user> => Boolean(user.id && user.name && user.role === "EMPLOYEE"))
+      .map((user) => [user.name, user.id]),
+  );
+  const pools = input.configuration.pools.map((pool) => ({ systemUserId: eligibleUsers.get(pool.expectedName) }));
+
+  if (pools.some((pool) => !pool.systemUserId)) {
+    throw new MetaSystemUserProvisioningError("configuration");
+  }
+
+  return pools as Array<{ systemUserId: string }>;
 }
 
 async function graphBatchPost(input: {
@@ -281,14 +348,20 @@ export async function provisionRecentActiveAdAccounts(input: {
 
     // Business Suite was read-only verified immediately before this approved
     // one-time migration: both explicit Employee pools had zero assigned
-    // assets. Meta's user token does not expose system-user read edges, so the
-    // first provider-side validation is the bounded assigned_users mutation.
-    // Any invalid pool ID or missing right is returned as a failed batch and
-    // prevents progress beyond that pool.
+    // assets. The Business Suite displays canonical system-user IDs, while
+    // Graph requires this app's scoped IDs for asset assignment. Resolve only
+    // the two configured Employee pool names in the approved Business Portfolio.
+    failureStage = "pool_configuration";
+    const appScopedPools = await resolveAppScopedPools({
+      configuration,
+      accessToken: input.accessToken,
+      appSecret: input.appSecret,
+    });
+
     failureStage = "pool_one_assignment";
     const poolOne = await assignAccounts({
       businessId: configuration.businessId,
-      systemUserId: configuration.pools[0].systemUserId,
+      systemUserId: appScopedPools[0].systemUserId,
       accountIds: poolOneCandidates,
       existingAccountIds: new Set(),
       accessToken: input.accessToken,
@@ -311,7 +384,7 @@ export async function provisionRecentActiveAdAccounts(input: {
     failureStage = "pool_two_assignment";
     const poolTwo = await assignAccounts({
       businessId: configuration.businessId,
-      systemUserId: configuration.pools[1].systemUserId,
+      systemUserId: appScopedPools[1].systemUserId,
       accountIds: poolTwoCandidates,
       existingAccountIds: new Set(),
       accessToken: input.accessToken,
