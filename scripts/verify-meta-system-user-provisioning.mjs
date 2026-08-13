@@ -13,6 +13,7 @@ assert.match(source, /NasmediaAdsPool02/);
 assert.match(source, /tasks: JSON\.stringify\(\["ANALYZE"\]\)/);
 assert.match(source, /assigned_users/);
 assert.match(source, /business: input\.businessId/);
+assert.match(source, /assigned_users\?\$\{parameters\.toString\(\)\}/);
 assert.match(source, /resolveAppScopedPools/);
 assert.match(source, /system_users/);
 assert.match(source, /META_BUSINESS_ID/);

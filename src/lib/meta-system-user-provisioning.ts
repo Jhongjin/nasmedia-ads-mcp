@@ -180,7 +180,7 @@ async function resolveAppScopedPools(input: {
 async function graphBatchPost(input: {
   accessToken: string;
   appSecret: string;
-  batch: Array<{ method: "POST"; relative_url: string; body: string }>;
+  batch: Array<{ method: "POST"; relative_url: string }>;
 }): Promise<GraphBatchResponse> {
   let response: Response;
   let payload: GraphBatchResponse;
@@ -229,15 +229,18 @@ async function assignAccounts(input: {
     const response = await graphBatchPost({
       accessToken: input.accessToken,
       appSecret: input.appSecret,
-      batch: accountBatch.map((accountId) => ({
-        method: "POST" as const,
-        relative_url: `${accountId}/assigned_users`,
-        body: new URLSearchParams({
+      batch: accountBatch.map((accountId) => {
+        const parameters = new URLSearchParams({
           business: input.businessId,
           user: input.systemUserId,
           tasks: JSON.stringify(["ANALYZE"]),
-        }).toString(),
-      })),
+        });
+
+        return {
+          method: "POST" as const,
+          relative_url: `${accountId}/assigned_users?${parameters.toString()}`,
+        };
+      }),
     });
     const successful = response.filter((entry) => entry.code === 200).length;
 
