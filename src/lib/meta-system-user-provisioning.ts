@@ -143,6 +143,16 @@ function uniqueNormalizedAccountIds(values: string[]): string[] | null {
   return normalized.some((value) => value === null) ? null : [...new Set(normalized as string[])];
 }
 
+function chunkAccountIds(accountIds: string[]): string[][] {
+  const chunks: string[][] = [];
+
+  for (let offset = 0; offset < accountIds.length; offset += META_BATCH_SIZE) {
+    chunks.push(accountIds.slice(offset, offset + META_BATCH_SIZE));
+  }
+
+  return chunks;
+}
+
 async function graphGet<T>(input: {
   path: string;
   accessToken: string;
@@ -253,8 +263,11 @@ async function assignAccounts(input: {
 }> {
   const unassigned = input.accountIds.filter((accountId) => !input.existingAccountIds.has(accountId));
 
-  for (let offset = 0; offset < unassigned.length; offset += META_BATCH_SIZE) {
-    const accountBatch = unassigned.slice(offset, offset + META_BATCH_SIZE);
+  // Meta permits 50 subrequests per Graph batch. A pool has at most 250
+  // candidates, so at most five bounded batches run concurrently. This keeps
+  // the overall operator request below the runtime limit without widening the
+  // selected asset set or the ANALYZE-only task.
+  const outcomes = await Promise.all(chunkAccountIds(unassigned).map(async (accountBatch) => {
     const response = await graphBatchPost({
       accessToken: input.accessToken,
       appSecret: input.appSecret,
@@ -272,19 +285,28 @@ async function assignAccounts(input: {
       }),
     });
     const successful = response.filter((entry) => entry.code === 200).length;
+    const failedEntry = response.find((entry) => entry.code !== 200);
 
-    if (successful !== accountBatch.length) {
-      const failedEntry = response.find((entry) => entry.code !== 200);
+    return {
+      assignedCount: successful,
+      failureCategory: successful === accountBatch.length
+        ? undefined
+        : response.some((entry) => entry.code === 400 || entry.code === 401 || entry.code === 403)
+          ? "permission" as const
+          : "upstream" as const,
+      ...(failedEntry ? { providerErrorCode: getGraphBatchProviderErrorCode(failedEntry) } : {}),
+      ...(failedEntry ? { providerErrorReason: getGraphBatchProviderErrorReason(failedEntry) } : {}),
+    };
+  }));
+  const firstFailure = outcomes.find((outcome) => outcome.failureCategory);
 
-      return {
-        assignedCount: offset + successful,
-        failureCategory: response.some((entry) => entry.code === 400 || entry.code === 401 || entry.code === 403)
-          ? "permission"
-          : "upstream",
-        ...(failedEntry ? { providerErrorCode: getGraphBatchProviderErrorCode(failedEntry) } : {}),
-        ...(failedEntry ? { providerErrorReason: getGraphBatchProviderErrorReason(failedEntry) } : {}),
-      };
-    }
+  if (firstFailure) {
+    return {
+      assignedCount: outcomes.reduce((total, outcome) => total + outcome.assignedCount, 0),
+      failureCategory: firstFailure.failureCategory,
+      ...(firstFailure.providerErrorCode !== undefined ? { providerErrorCode: firstFailure.providerErrorCode } : {}),
+      ...(firstFailure.providerErrorReason ? { providerErrorReason: firstFailure.providerErrorReason } : {}),
+    };
   }
 
   return { assignedCount: unassigned.length };
@@ -462,6 +484,7 @@ export async function provisionRecentActiveAdAccounts(input: {
 }
 
 export const metaSystemUserProvisioningInternals = {
+  chunkAccountIds,
   normalizeAccountId,
   uniqueNormalizedAccountIds,
 };

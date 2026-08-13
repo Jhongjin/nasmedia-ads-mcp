@@ -8,6 +8,8 @@ const login = await readFile(new URL("../src/app/api/auth/meta/inventory/provisi
 assert.match(source, /import "server-only"/);
 assert.match(source, /MAX_ACTIVE_ACCOUNTS_PER_POOL = 250/);
 assert.match(source, /MAX_ACTIVE_ACCOUNTS_FOR_TWO_POOLS/);
+assert.match(source, /chunkAccountIds/);
+assert.match(source, /Promise\.all\(chunkAccountIds\(unassigned\)/);
 assert.match(source, /NasmediaAdsPool01/);
 assert.match(source, /NasmediaAdsPool02/);
 assert.match(source, /tasks: JSON\.stringify\(\["ANALYZE"\]\)/);
