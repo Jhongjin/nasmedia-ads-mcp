@@ -48,6 +48,9 @@ Set these only on the server or deployment platform. Do not use a `NEXT_PUBLIC_`
 | `META_LOGIN_CONFIG_ID` | Approved Meta Login configuration ID for the inventory check |
 | `META_OAUTH_REDIRECT_URI` | Preferred exact Meta Login callback URL for the personal-access inventory check; `META_REDIRECT_URI` is a temporary fallback |
 | `META_OAUTH_STATE_SECRET` | High-entropy secret that binds the short-lived Meta OAuth state to the current company SSO subject |
+| `META_CONTROL_PLANE_SUPABASE_URL` | AdMate-Data-Core server-only URL for the recent-spend selection ledger |
+| `META_CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY` | Server-only Data-Core secret key for the selection ledger; never exposed to the browser |
+| `META_ACCOUNT_IDENTIFIER_ENCRYPTION_KEY` | 32-byte base64url key that encrypts and HMAC-links account references in the selection ledger |
 
 The dashboard uses a real Microsoft Entra OIDC authorization-code flow with PKCE. It never accepts a shared password or manufactures a local sign-in. For an individual Microsoft account or a non-company tenant, configure `NASMEDIA_ALLOWED_ENTRA_SUBJECTS` with the exact Entra object ID of each approved operator and leave `NASMEDIA_ALLOWED_EMAIL_DOMAIN` unset. When the subject allowlist is present, an email-domain match cannot authorize a session. Until every Entra/session variable above is configured, the protected dashboard, account API, assistant Server Action, and legacy Meta OAuth initializer remain fail-closed.
 
@@ -76,7 +79,7 @@ Register the personal-access inventory callback as an exact URI in the Meta Logi
 https://<approved-origin>/api/auth/meta/inventory/callback
 ```
 
-The `/meta-access-check` screen is an operator-initiated, read-only diagnostic for a human Meta administrator account. It exchanges the returned code only in server memory, retrieves only the accessible-account count and the three required permission booleans, then discards the token and account identifiers. It never shows, stores, or passes account names, account IDs, or the personal token to the dashboard, assistant, or model. Its signed result cookie is bound to the current company SSO subject, lasts 15 minutes, and contains only count, permission booleans, expiry bucket, and a normalized failure category. The check has no campaign, budget, creative, asset, or permission mutation path.
+The `/meta-access-check` screen is an operator-initiated, read-only diagnostic for a human Meta administrator account. It exchanges the returned code and keeps the personal OAuth token only in server memory for the same request. When `ads_read` is granted, it checks whether each accessible account recorded spend greater than zero for the rolling six-month UTC date window. It stores neither the OAuth token, account name, raw account ID, raw Insights response, nor spend amount. The Data-Core selection ledger retains only encrypted account references, keyed hashes, an `active`/`inactive`/`unknown` outcome, aggregate counts, and append-only audit events for 30 days. A failed or ambiguous Insights read becomes `unknown` and is excluded from automatic connection candidates. Its signed result cookie is bound to the current operator subject, lasts 15 minutes, and contains only aggregate count, permission booleans, expiry bucket, and a normalized result. The check has no campaign, budget, creative, asset, or permission mutation path.
 
 ## Meta data handling
 
@@ -85,6 +88,8 @@ The `/meta-access-check` screen is an operator-initiated, read-only diagnostic f
 - The account list is queried independently for each configured system-user connection. Each discovered account is bound internally to its originating connection before an Insights request is made, so one system user's token is never used to read another bucket's account.
 - A duplicate account visible through two connections, or more than 300 returned ad accounts from one connection, fails closed as a topology error. Connection IDs and token values are never sent to the UI, API, or assistant model.
 - `/me/adaccounts` requests 100 accounts per page and follows cursors only far enough to prove the 300-account safety bound. The API response includes `truncated: true` when the safety page cap is reached.
+- Recent-spend selection uses bounded Graph batch reads of `Insights.spend` for the same personal-admin OAuth request. The personal OAuth token does not enter the database or a browser response. Accounts with no usable response are classified `unknown`, never treated as active.
+- The selection ledger is isolated in the existing AdMate-Data-Core `openclaw` schema with RLS enabled, no `anon` or `authenticated` grants, and a `service_role`-only append-only audit event table. This is selection evidence only; it does not grant a Meta asset or enable an MCP account policy.
 - Dashboard reads use `cache: "no-store"`; a manual refresh must represent a fresh Meta query rather than an ambiguous persistent cache result.
 - `business{id,name}`, account status, currency, and `amount_spent` are requested in the list request. This avoids an N+1 account detail request.
 - `amount_spent` is the AdAccount cumulative-spend field, not an Insights period metric. Meta returns this account field as an integer in the account-currency minor unit. The UI determines the currency fraction digits through `Intl.NumberFormat` before formatting, and displays `-` for a missing or unsafe value. It never substitutes zero.

@@ -21,7 +21,7 @@ export function AppHeader({ isAuthenticated }: AppHeaderProps) {
           <Link href="/mcp-account-governance">MCP 계정 관리</Link>
         </nav>
         <div className="operator-area">
-          <span className="operator-name">{isAuthenticated ? "회사 SSO 인증됨" : "회사 SSO 로그인 필요"}</span>
+          <span className="operator-name">{isAuthenticated ? "운영자 인증됨" : "운영자 로그인 필요"}</span>
           {isAuthenticated ? (
             <form action="/api/auth/entra/logout" method="post">
               <button className="logout-button" type="submit">로그아웃</button>

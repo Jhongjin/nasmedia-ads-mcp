@@ -5,15 +5,17 @@ import {
   failedMetaInventoryResult,
   getExpiredMetaInventoryStateCookieOptions,
   getMetaInventoryResultCookieOptions,
-  inspectMetaPersonalAccess,
+  inspectMetaPersonalAccessWithAccountIds,
   META_INVENTORY_RESULT_COOKIE,
   META_INVENTORY_STATE_COOKIE,
   MetaPersonalAccessInventoryError,
 } from "@/lib/meta-personal-access-inventory";
+import { runMetaRecentSpendFilter } from "@/lib/meta-active-account-scan";
 import { getOperatorSession } from "@/lib/operator-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 function inventoryResultResponse(request: NextRequest) {
   const response = NextResponse.redirect(new URL("/meta-access-check", request.url));
@@ -36,7 +38,7 @@ export async function GET(request: NextRequest) {
       {
         ok: false,
         category: "authentication",
-        error: "회사 SSO 로그인이 필요합니다.",
+        error: "운영자 로그인이 필요합니다.",
       },
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
@@ -52,12 +54,21 @@ export async function GET(request: NextRequest) {
     result = failedMetaInventoryResult("authentication");
   } else {
     try {
-      result = await inspectMetaPersonalAccess({
+      const inspected = await inspectMetaPersonalAccessWithAccountIds({
         code,
         returnedState,
         storedState,
         operatorSubject: session.subject,
       });
+      const recentSpendFilter = await runMetaRecentSpendFilter({
+        accessToken: inspected.accessToken,
+        appSecret: inspected.appSecret,
+        operatorSubject: session.subject,
+        accountIds: inspected.accountIds,
+        inventory: inspected.inventory,
+      });
+
+      result = { ...inspected.inventory, recentSpendFilter };
     } catch (error) {
       result = failedMetaInventoryResult(
         error instanceof MetaPersonalAccessInventoryError ? error.category : "upstream",

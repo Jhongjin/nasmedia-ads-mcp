@@ -19,7 +19,7 @@ export async function GET() {
       {
         ok: false,
         category: "authentication",
-        error: "회사 SSO 로그인이 필요합니다.",
+        error: "운영자 로그인이 필요합니다.",
       },
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );

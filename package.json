@@ -15,7 +15,8 @@
     "verify:meta-mcp-account-policy-gate": "node --experimental-strip-types scripts/verify-meta-mcp-account-policy-gate.mjs",
     "verify:meta-mcp-account-capability-request": "node --experimental-strip-types scripts/verify-meta-mcp-account-capability-request.mjs",
     "check:meta-mcp-policy-administration": "node scripts/check-meta-mcp-policy-administration-boundary.mjs",
-    "verify:meta-mcp-readiness-page": "node scripts/verify-meta-mcp-readiness-page.mjs"
+    "verify:meta-mcp-readiness-page": "node scripts/verify-meta-mcp-readiness-page.mjs",
+    "verify:meta-active-account-scan": "node --experimental-strip-types scripts/verify-meta-active-account-scan.mjs"
   },
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.16",

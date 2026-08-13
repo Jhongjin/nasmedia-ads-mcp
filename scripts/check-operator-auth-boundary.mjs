@@ -40,7 +40,7 @@ assertBefore("src/app/api/dashboard/accounts/route.ts", "const session = await g
 assertBefore("src/app/assistant/actions.ts", "const session = await getOperatorSession()", "const result = await runMetaAssistant");
 assertBefore("src/app/api/auth/meta/login/route.ts", "const session = await getOperatorSession()", "const appId = getRequiredEnv");
 assertBefore("src/app/api/auth/meta/inventory/login/route.ts", "const session = await getOperatorSession()", "const { authorizationUrl, state } = await createMetaInventoryAuthorizationRequest");
-assertBefore("src/app/api/auth/meta/inventory/callback/route.ts", "const session = await getOperatorSession()", "result = await inspectMetaPersonalAccess");
+assertBefore("src/app/api/auth/meta/inventory/callback/route.ts", "const session = await getOperatorSession()", "const inspected = await inspectMetaPersonalAccessWithAccountIds");
 assertIncludes("src/proxy.ts", "OPERATOR_SESSION_COOKIE");
 assertIncludes("src/proxy.ts", '"/meta-access-check/:path*"');
 assertIncludes("src/lib/operator-auth.ts", "timingSafeEqual");

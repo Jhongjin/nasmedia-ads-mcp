@@ -12,7 +12,7 @@ import {
   type JWTPayload,
 } from "jose";
 
-const META_GRAPH_VERSION = "v25.0";
+export const META_GRAPH_VERSION = "v25.0";
 const META_OAUTH_STATE_SECONDS = 10 * 60;
 const META_INVENTORY_RESULT_SECONDS = 15 * 60;
 const META_TIMEOUT_MS = 15_000;
@@ -24,7 +24,7 @@ const META_INVENTORY_RESULT_AUDIENCE = "nasmedia-meta-inventory-result";
 export const META_INVENTORY_STATE_COOKIE = "nasmedia_meta_inventory_state";
 export const META_INVENTORY_RESULT_COOKIE = "nasmedia_meta_inventory_result";
 
-type MetaInventoryConfiguration = {
+export type MetaInventoryConfiguration = {
   appId: string;
   appSecret: string;
   loginConfigId: string;
@@ -75,6 +75,16 @@ export type MetaPersonalAccessInventory = {
     businessManagement: boolean;
   };
   tokenExpiry: "under_one_day" | "under_seven_days" | "seven_days_or_more" | "unknown";
+  recentSpendFilter?: {
+    status: "completed" | "failed";
+    windowStart: string;
+    windowEnd: string;
+    totalAccountCount: number;
+    activeAccountCount: number;
+    inactiveAccountCount: number;
+    unknownAccountCount: number;
+    failureCategory?: "configuration" | "permission" | "network" | "upstream" | "storage";
+  };
 };
 
 export class MetaPersonalAccessInventoryError extends Error {
@@ -188,7 +198,7 @@ function getCookieOptions(maxAge: number, path: string) {
   };
 }
 
-function appSecretProof(accessToken: string, appSecret: string): string {
+export function createMetaAppSecretProof(accessToken: string, appSecret: string): string {
   return createHmac("sha256", appSecret)
     .update(accessToken)
     .digest("hex");
@@ -271,7 +281,7 @@ async function metaGet<T>(
     url.searchParams.set(name, value);
   }
 
-  url.searchParams.set("appsecret_proof", appSecretProof(accessToken, appSecret));
+  url.searchParams.set("appsecret_proof", createMetaAppSecretProof(accessToken, appSecret));
 
   let response: Response;
   let payload: T & { error?: unknown };
@@ -296,23 +306,10 @@ async function metaGet<T>(
   return payload;
 }
 
-async function buildInventory(
+async function listMetaPersonalAdAccountIds(
   accessToken: string,
-  expiresIn: number | undefined,
   configuration: MetaInventoryConfiguration,
-): Promise<MetaPersonalAccessInventory> {
-  const permissions = await metaGet<MetaPermissionsResponse>(
-    "me/permissions",
-    accessToken,
-    configuration.appSecret,
-    {},
-  );
-  const granted = new Set(
-    (permissions.data ?? [])
-      .filter((permission) => permission.status === "granted")
-      .map((permission) => permission.permission),
-  );
-
+): Promise<{ accountIds: string[]; accountListTruncated: boolean }> {
   const accessibleAdAccountIds = new Set<string>();
   let after: string | undefined;
   let accountListTruncated = false;
@@ -354,15 +351,42 @@ async function buildInventory(
   }
 
   return {
-    status: "completed",
-    accessibleAdAccountCount: accessibleAdAccountIds.size,
+    accountIds: [...accessibleAdAccountIds],
     accountListTruncated,
-    grantedPermissions: {
-      adsRead: granted.has("ads_read"),
-      adsManagement: granted.has("ads_management"),
-      businessManagement: granted.has("business_management"),
+  };
+}
+
+async function collectMetaPersonalAccess(
+  accessToken: string,
+  expiresIn: number | undefined,
+  configuration: MetaInventoryConfiguration,
+): Promise<{ inventory: MetaPersonalAccessInventory; accountIds: string[] }> {
+  const permissions = await metaGet<MetaPermissionsResponse>(
+    "me/permissions",
+    accessToken,
+    configuration.appSecret,
+    {},
+  );
+  const granted = new Set(
+    (permissions.data ?? [])
+      .filter((permission) => permission.status === "granted")
+      .map((permission) => permission.permission),
+  );
+  const { accountIds, accountListTruncated } = await listMetaPersonalAdAccountIds(accessToken, configuration);
+
+  return {
+    inventory: {
+      status: "completed",
+      accessibleAdAccountCount: accountIds.length,
+      accountListTruncated,
+      grantedPermissions: {
+        adsRead: granted.has("ads_read"),
+        adsManagement: granted.has("ads_management"),
+        businessManagement: granted.has("business_management"),
+      },
+      tokenExpiry: toTokenExpiry(expiresIn),
     },
-    tokenExpiry: toTokenExpiry(expiresIn),
+    accountIds,
   };
 }
 
@@ -410,7 +434,32 @@ export async function inspectMetaPersonalAccess(input: {
 
   const { accessToken, expiresIn } = await exchangeAuthorizationCode(input.code, configuration);
 
-  return buildInventory(accessToken, expiresIn, configuration);
+  const collected = await collectMetaPersonalAccess(accessToken, expiresIn, configuration);
+
+  return collected.inventory;
+}
+
+export async function inspectMetaPersonalAccessWithAccountIds(input: {
+  code: string;
+  returnedState: string;
+  storedState: string;
+  operatorSubject: string;
+}): Promise<{ inventory: MetaPersonalAccessInventory; accountIds: string[]; accessToken: string; appSecret: string }> {
+  const configuration = requireConfiguration();
+
+  if (!validateStateValue(input.returnedState, input.storedState, input.operatorSubject, configuration.stateSecret)) {
+    throw new MetaPersonalAccessInventoryError("authentication");
+  }
+
+  const { accessToken, expiresIn } = await exchangeAuthorizationCode(input.code, configuration);
+  const collected = await collectMetaPersonalAccess(accessToken, expiresIn, configuration);
+
+  return {
+    inventory: collected.inventory,
+    accountIds: collected.accountIds,
+    accessToken,
+    appSecret: configuration.appSecret,
+  };
 }
 
 export async function createMetaInventoryResultCookieValue(

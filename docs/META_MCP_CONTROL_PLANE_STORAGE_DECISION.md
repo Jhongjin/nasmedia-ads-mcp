@@ -1,7 +1,8 @@
 # Meta Ads MCP control-plane storage decision
 
-**Status:** read-only AdMate-Data-Core preflight completed; no schema,
-migration, policy write, or production configuration has been applied.
+**Status:** the read-only recent-spend selection ledger is applied in
+AdMate-Data-Core. It is not an MCP policy ledger and does not enable any
+account, change a Meta asset assignment, or permit campaign mutation.
 
 **Decision date:** 2026-08-02
 
@@ -48,9 +49,10 @@ also contains existing application tables. There is no existing
 `control_plane` schema, so a future MCP ledger can be isolated rather than
 merged into a product schema.
 
-This confirms the architectural fit for an additional private
-`control_plane` schema in AdMate-Data-Core. It does **not** yet authorize its
-creation:
+This confirms the architectural fit for an additional server-only control
+plane store in AdMate-Data-Core. The first applied component is a narrowly
+scoped selection ledger in the canonical `openclaw` operational schema rather
+than a new exposed schema:
 
 - the read-only security advisor reports existing high-priority RLS findings
   and additional warnings in the current project;
@@ -85,7 +87,28 @@ The aggregate finding classes, ownership separation, and required migration
 guardrails are recorded in
 [Data-Core security triage](META_MCP_DATA_CORE_SECURITY_TRIAGE.md).
 
-## Proposed data boundary
+## Applied recent-spend selection boundary (2026-08-13)
+
+The user approved the account-selection phase. The following three Data-Core
+tables are now present under `openclaw`:
+
+| Table | Purpose | Explicit exclusions |
+| --- | --- | --- |
+| `meta_active_account_scan_runs` | six-month spend filter window and aggregate outcomes | OAuth token, account name, raw provider response, spend amount |
+| `meta_active_account_scan_items` | encrypted account reference, keyed hash, `active`/`inactive`/`unknown` result | raw account ID, token, name, raw Insights payload |
+| `meta_active_account_scan_events` | append-only aggregate scan audit event | identifiers, credentials, provider payload |
+
+Every new table has RLS enabled and no `anon` or `authenticated` Data API
+grant. The event table grants `service_role` only `SELECT` and `INSERT`; a
+database trigger rejects update or delete. Item records expire after 30 days.
+An account is a connection candidate only when Meta reported positive spend in
+the six-month window; ambiguous and failed reads are `unknown` and excluded.
+
+This changes only the selection-evidence phase. The subsequent account policy
+ledger and provider capability gate remain fail-closed until their own review
+and approval.
+
+## Proposed MCP policy data boundary
 
 Create a non-Data-API control schema (for example `control_plane`) with access
 only from server-side code. The browser must never receive a service-role key,
