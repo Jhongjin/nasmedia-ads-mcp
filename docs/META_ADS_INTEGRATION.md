@@ -37,18 +37,19 @@ Set these only on the server or deployment platform. Do not use a `NEXT_PUBLIC_`
 | `META_APP_SECRET` | Server-only Meta app secret; computes `appsecret_proof` and exchanges the one-time personal-access inventory code |
 | `OPENROUTER_API_KEY` | Company-approved LLM provider credential |
 | `OPENROUTER_MODEL` | OpenRouter model identifier |
-| `NASMEDIA_ENTRA_TENANT_ID` | Nasmedia Microsoft Entra tenant ID for company SSO |
+| `NASMEDIA_ENTRA_TENANT_ID` | Microsoft Entra tenant ID that owns the operator app registration |
 | `NASMEDIA_ENTRA_CLIENT_ID` | Entra app registration client ID |
 | `NASMEDIA_ENTRA_CLIENT_SECRET` | Entra app registration client secret, stored only in the host secret store |
 | `NASMEDIA_APP_ORIGIN` | Exact app origin used to construct the registered Entra callback URL |
-| `NASMEDIA_ALLOWED_EMAIL_DOMAIN` | Exact company email domain allowed to obtain an operator session |
+| `NASMEDIA_ALLOWED_ENTRA_SUBJECTS` | Preferred comma-separated exact Entra object IDs allowed to obtain an operator session; takes precedence over the legacy email-domain setting |
+| `NASMEDIA_ALLOWED_EMAIL_DOMAIN` | Legacy exact company email domain allowed to obtain an operator session; use only when `NASMEDIA_ALLOWED_ENTRA_SUBJECTS` is unset |
 | `NASMEDIA_SESSION_SECRET` | High-entropy secret used to sign the short-lived HttpOnly operator session |
 | `META_APP_ID` | Meta app ID used only for the operator-initiated personal-access inventory check |
 | `META_LOGIN_CONFIG_ID` | Approved Meta Login configuration ID for the inventory check |
 | `META_OAUTH_REDIRECT_URI` | Preferred exact Meta Login callback URL for the personal-access inventory check; `META_REDIRECT_URI` is a temporary fallback |
 | `META_OAUTH_STATE_SECRET` | High-entropy secret that binds the short-lived Meta OAuth state to the current company SSO subject |
 
-The dashboard uses a real Microsoft Entra OIDC authorization-code flow with PKCE. It never accepts a shared password or manufactures a local sign-in. Until every Entra/session variable above is configured, the protected dashboard, account API, assistant Server Action, and legacy Meta OAuth initializer remain fail-closed.
+The dashboard uses a real Microsoft Entra OIDC authorization-code flow with PKCE. It never accepts a shared password or manufactures a local sign-in. For an individual Microsoft account or a non-company tenant, configure `NASMEDIA_ALLOWED_ENTRA_SUBJECTS` with the exact Entra object ID of each approved operator and leave `NASMEDIA_ALLOWED_EMAIL_DOMAIN` unset. When the subject allowlist is present, an email-domain match cannot authorize a session. Until every Entra/session variable above is configured, the protected dashboard, account API, assistant Server Action, and legacy Meta OAuth initializer remain fail-closed.
 
 Use the preferred connection registry only in the deployment platform's encrypted server-side environment store. The example is deliberately non-functional; never place real tokens in source control, browser configuration, or chat.
 
@@ -67,7 +68,7 @@ Register exactly this redirect URI in the Entra app registration, using the same
 https://<approved-origin>/api/auth/entra/callback
 ```
 
-The sign-in callback validates the OIDC issuer, audience, nonce, tenant ID, and allowed email domain before issuing an eight-hour, HttpOnly, Secure-in-production, SameSite=Lax session cookie. The session holds only a subject identifier, tenant identifier, and operator role; no email address, Meta credential, or provider token is placed in the browser session.
+The sign-in callback validates the OIDC issuer, audience, nonce, tenant ID, and either an exact allowed subject or the legacy allowed email domain before issuing an eight-hour, HttpOnly, Secure-in-production, SameSite=Lax session cookie. The session holds only a subject identifier, tenant identifier, and operator role; no email address, Meta credential, or provider token is placed in the browser session.
 
 Register the personal-access inventory callback as an exact URI in the Meta Login configuration. In production it must use the approved HTTPS origin:
 

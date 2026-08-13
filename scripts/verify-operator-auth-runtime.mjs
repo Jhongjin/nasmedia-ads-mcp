@@ -15,8 +15,10 @@ const environment = {
   NASMEDIA_ENTRA_CLIENT_ID: "test-client",
   NASMEDIA_ENTRA_CLIENT_SECRET: "test-client-secret",
   NASMEDIA_APP_ORIGIN: origin,
-  NASMEDIA_ALLOWED_EMAIL_DOMAIN: "nasmedia.co.kr",
+  NASMEDIA_ALLOWED_ENTRA_SUBJECTS: "11111111-2222-3333-4444-555555555555",
 };
+
+delete environment.NASMEDIA_ALLOWED_EMAIL_DOMAIN;
 
 delete environment.META_SYSTEM_USER_ACCESS_TOKEN;
 delete environment.META_APP_ID;

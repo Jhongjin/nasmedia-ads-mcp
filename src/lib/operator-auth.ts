@@ -21,7 +21,8 @@ type EntraConfiguration = {
   clientId: string;
   clientSecret: string;
   appOrigin: string;
-  allowedEmailDomain: string;
+  allowedEmailDomain: string | null;
+  allowedSubjectIds: ReadonlySet<string>;
   sessionSecret: string;
 };
 
@@ -54,6 +55,7 @@ function getEntraConfiguration(): EntraConfiguration | null {
   const allowedEmailDomain = process.env.NASMEDIA_ALLOWED_EMAIL_DOMAIN
     ?.trim()
     .toLocaleLowerCase("en-US");
+  const allowedSubjectIds = parseAllowedSubjectIds(process.env.NASMEDIA_ALLOWED_ENTRA_SUBJECTS);
   const sessionSecret = process.env.NASMEDIA_SESSION_SECRET;
 
   if (
@@ -61,7 +63,8 @@ function getEntraConfiguration(): EntraConfiguration | null {
     !clientId ||
     !clientSecret ||
     !appOrigin ||
-    !allowedEmailDomain ||
+    !allowedSubjectIds ||
+    (!allowedEmailDomain && allowedSubjectIds.size === 0) ||
     !sessionSecret
   ) {
     return null;
@@ -85,9 +88,30 @@ function getEntraConfiguration(): EntraConfiguration | null {
     clientId,
     clientSecret,
     appOrigin,
-    allowedEmailDomain,
+    allowedEmailDomain: allowedEmailDomain || null,
+    allowedSubjectIds,
     sessionSecret,
   };
+}
+
+function parseAllowedSubjectIds(value: string | undefined): ReadonlySet<string> | null {
+  if (!value?.trim()) {
+    return new Set();
+  }
+
+  const subjectIds = value
+    .split(",")
+    .map((subjectId) => subjectId.trim().toLocaleLowerCase("en-US"))
+    .filter(Boolean);
+
+  if (
+    subjectIds.length === 0 ||
+    subjectIds.some((subjectId) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(subjectId))
+  ) {
+    return null;
+  }
+
+  return new Set(subjectIds);
 }
 
 function getSessionKey(configuration: EntraConfiguration): Uint8Array {
@@ -141,6 +165,12 @@ function isAllowedEmail(value: string, allowedDomain: string): boolean {
   const separator = normalized.lastIndexOf("@");
 
   return separator > 0 && normalized.slice(separator + 1) === allowedDomain;
+}
+
+function isAllowedSubject(value: string, allowedSubjectIds: ReadonlySet<string>): boolean {
+  const normalized = value.trim().toLocaleLowerCase("en-US");
+
+  return [...allowedSubjectIds].some((allowedSubjectId) => isSameValue(normalized, allowedSubjectId));
 }
 
 export function isEntraAuthConfigured(): boolean {
@@ -282,15 +312,18 @@ export async function exchangeEntraAuthorizationCode(input: {
   const tenantId = getStringClaim(idTokenPayload, "tid");
   const subject = getStringClaim(idTokenPayload, "oid") ?? getStringClaim(idTokenPayload, "sub");
   const accountName = getStringClaim(idTokenPayload, "preferred_username") ?? getStringClaim(idTokenPayload, "email");
+  const isSubjectAllowlistMode = configuration.allowedSubjectIds.size > 0;
+  const isAuthorizedOperator = isSubjectAllowlistMode
+    ? subject && isAllowedSubject(subject, configuration.allowedSubjectIds)
+    : accountName && configuration.allowedEmailDomain && isAllowedEmail(accountName, configuration.allowedEmailDomain);
 
   if (
     !tokenNonce ||
     !tenantId ||
     !subject ||
-    !accountName ||
     !isSameValue(tokenNonce, nonce) ||
     !isSameValue(tenantId, configuration.tenantId) ||
-    !isAllowedEmail(accountName, configuration.allowedEmailDomain)
+    !isAuthorizedOperator
   ) {
     throw new OperatorAuthError("authorization");
   }
