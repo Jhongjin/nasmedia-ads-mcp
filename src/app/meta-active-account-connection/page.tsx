@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   META_INVENTORY_RESULT_COOKIE,
   readMetaInventoryResultCookieValue,
+  type MetaProvisioningResult,
 } from "@/lib/meta-personal-access-inventory";
 import { getOperatorSession } from "@/lib/operator-auth";
 import { MetaProvisioningImplicitCallback } from "./meta-provisioning-implicit-callback";
@@ -35,6 +36,29 @@ function failureLabel(category: "configuration" | "permission" | "network" | "up
       return "전용 시스템 사용자 풀 설정을 확인하지 못했습니다. 변경을 시작하지 않았습니다.";
     default:
       return "완료 전에는 다음 단계를 시작하지 않습니다.";
+  }
+}
+
+function failureStageLabel(stage: MetaProvisioningResult["failureStage"]) {
+  switch (stage) {
+    case "active_account_scan":
+      return "최근 집행 이력 판별 단계";
+    case "permission_check":
+      return "Meta 권한 확인 단계";
+    case "pool_configuration":
+      return "전용 풀 환경 설정 단계";
+    case "pool_validation":
+      return "전용 풀 검증 단계";
+    case "assignment_inventory":
+      return "기존 할당 조회 단계";
+    case "capacity_check":
+      return "전용 풀 용량 확인 단계";
+    case "pool_one_assignment":
+      return "Ads Pool 01 배정 단계";
+    case "pool_two_assignment":
+      return "Ads Pool 02 배정 단계";
+    default:
+      return null;
   }
 }
 
@@ -92,7 +116,12 @@ export default async function MetaActiveAccountConnectionPage() {
         ) : null}
 
         {provisioning?.status !== "completed" ? (
-          <p className="access-check-message">{failureLabel(provisioning?.failureCategory)}</p>
+          <p className="access-check-message">
+            {failureLabel(provisioning?.failureCategory)}
+            {failureStageLabel(provisioning?.failureStage)
+              ? ` 실패 지점: ${failureStageLabel(provisioning?.failureStage)}.`
+              : ""}
+          </p>
         ) : null}
       </section>
 

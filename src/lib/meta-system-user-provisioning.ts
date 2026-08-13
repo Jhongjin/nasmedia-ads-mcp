@@ -49,6 +49,7 @@ type GraphBatchResponse = Array<{
 }>;
 
 type ProvisioningFailureCategory = NonNullable<MetaProvisioningResult["failureCategory"]>;
+type ProvisioningFailureStage = NonNullable<MetaProvisioningResult["failureStage"]>;
 
 class MetaSystemUserProvisioningError extends Error {
   constructor(readonly category: ProvisioningFailureCategory) {
@@ -284,6 +285,7 @@ async function assignAccounts(input: {
 function failedResult(input: {
   candidateAccountCount: number;
   failureCategory: ProvisioningFailureCategory;
+  failureStage: ProvisioningFailureStage;
   poolOneAssignedAccountCount?: number;
   poolTwoAssignedAccountCount?: number;
 }): MetaProvisioningResult {
@@ -293,6 +295,7 @@ function failedResult(input: {
     poolOneAssignedAccountCount: input.poolOneAssignedAccountCount ?? 0,
     poolTwoAssignedAccountCount: input.poolTwoAssignedAccountCount ?? 0,
     failureCategory: input.failureCategory,
+    failureStage: input.failureStage,
   };
 }
 
@@ -317,6 +320,7 @@ export async function provisionRecentActiveAdAccounts(input: {
       provisioning: failedResult({
         candidateAccountCount: 0,
         failureCategory: "configuration",
+        failureStage: "active_account_scan",
       }),
     };
   }
@@ -327,6 +331,7 @@ export async function provisionRecentActiveAdAccounts(input: {
       provisioning: failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: "permission",
+        failureStage: "permission_check",
       }),
     };
   }
@@ -337,6 +342,7 @@ export async function provisionRecentActiveAdAccounts(input: {
       provisioning: failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: "configuration",
+        failureStage: "capacity_check",
       }),
     };
   }
@@ -349,15 +355,18 @@ export async function provisionRecentActiveAdAccounts(input: {
       provisioning: failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: "configuration",
+        failureStage: "pool_configuration",
       }),
     };
   }
 
   const poolOneCandidates = candidateAccountIds.slice(0, MAX_ACTIVE_ACCOUNTS_PER_POOL);
   const poolTwoCandidates = candidateAccountIds.slice(MAX_ACTIVE_ACCOUNTS_PER_POOL);
+  let failureStage: ProvisioningFailureStage = "pool_validation";
 
   try {
     await verifyPools({ configuration, accessToken: input.accessToken, appSecret: input.appSecret });
+    failureStage = "assignment_inventory";
     const [poolOneExisting, poolTwoExisting] = await Promise.all(
       configuration.pools.map((pool) => listAssignedAdAccountIds({
         systemUserId: pool.systemUserId,
@@ -377,10 +386,12 @@ export async function provisionRecentActiveAdAccounts(input: {
         provisioning: failedResult({
           candidateAccountCount: candidateAccountIds.length,
           failureCategory: "configuration",
+          failureStage: "capacity_check",
         }),
       };
     }
 
+    failureStage = "pool_one_assignment";
     const poolOne = await assignAccounts({
       systemUserId: configuration.pools[0].systemUserId,
       accountIds: poolOneCandidates,
@@ -397,12 +408,14 @@ export async function provisionRecentActiveAdAccounts(input: {
             candidateAccountCount: candidateAccountIds.length,
             poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
             failureCategory: poolOne.failureCategory,
+            failureStage: "pool_one_assignment",
           }),
           status: "partial",
         },
       };
     }
 
+    failureStage = "pool_two_assignment";
     const poolTwo = await assignAccounts({
       systemUserId: configuration.pools[1].systemUserId,
       accountIds: poolTwoCandidates,
@@ -420,6 +433,7 @@ export async function provisionRecentActiveAdAccounts(input: {
             poolOneAssignedAccountCount: poolOneExisting.size + poolOne.assignedCount,
             poolTwoAssignedAccountCount: poolTwoExisting.size + poolTwo.assignedCount,
             failureCategory: poolTwo.failureCategory,
+            failureStage: "pool_two_assignment",
           }),
           status: "partial",
         },
@@ -441,6 +455,7 @@ export async function provisionRecentActiveAdAccounts(input: {
       provisioning: failedResult({
         candidateAccountCount: candidateAccountIds.length,
         failureCategory: error instanceof MetaSystemUserProvisioningError ? error.category : "upstream",
+        failureStage,
       }),
     };
   }

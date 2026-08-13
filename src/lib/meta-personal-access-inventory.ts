@@ -31,6 +31,15 @@ export type MetaProvisioningResult = {
   poolOneAssignedAccountCount: number;
   poolTwoAssignedAccountCount: number;
   failureCategory?: "configuration" | "permission" | "network" | "upstream";
+  failureStage?:
+    | "active_account_scan"
+    | "permission_check"
+    | "pool_configuration"
+    | "pool_validation"
+    | "assignment_inventory"
+    | "capacity_check"
+    | "pool_one_assignment"
+    | "pool_two_assignment";
 };
 
 export type MetaInventoryConfiguration = {
