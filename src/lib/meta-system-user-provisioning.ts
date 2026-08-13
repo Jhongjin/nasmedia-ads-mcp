@@ -77,6 +77,23 @@ function toFailureCategory(response: Response): ProvisioningFailureCategory {
     : "upstream";
 }
 
+function getGraphBatchProviderErrorCode(entry: GraphBatchResponse[number]): number | undefined {
+  if (entry.code === 200 || !entry.body) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(entry.body) as { error?: { code?: unknown } };
+    const errorCode = parsed.error?.code;
+
+    return typeof errorCode === "number" && Number.isInteger(errorCode) && errorCode >= 0
+      ? errorCode
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function normalizeAccountId(value: string): string | null {
   const normalized = value.trim();
 
@@ -132,7 +149,11 @@ async function assignAccounts(input: {
   existingAccountIds: Set<string>;
   accessToken: string;
   appSecret: string;
-}): Promise<{ assignedCount: number; failureCategory?: ProvisioningFailureCategory }> {
+}): Promise<{
+  assignedCount: number;
+  failureCategory?: ProvisioningFailureCategory;
+  providerErrorCode?: number;
+}> {
   const unassigned = input.accountIds.filter((accountId) => !input.existingAccountIds.has(accountId));
 
   for (let offset = 0; offset < unassigned.length; offset += META_BATCH_SIZE) {
@@ -152,11 +173,14 @@ async function assignAccounts(input: {
     const successful = response.filter((entry) => entry.code === 200).length;
 
     if (successful !== accountBatch.length) {
+      const failedEntry = response.find((entry) => entry.code !== 200);
+
       return {
         assignedCount: offset + successful,
         failureCategory: response.some((entry) => entry.code === 400 || entry.code === 401 || entry.code === 403)
           ? "permission"
           : "upstream",
+        ...(failedEntry ? { providerErrorCode: getGraphBatchProviderErrorCode(failedEntry) } : {}),
       };
     }
   }
@@ -170,6 +194,7 @@ function failedResult(input: {
   failureStage: ProvisioningFailureStage;
   poolOneAssignedAccountCount?: number;
   poolTwoAssignedAccountCount?: number;
+  providerErrorCode?: number;
 }): MetaProvisioningResult {
   return {
     status: "failed",
@@ -178,6 +203,7 @@ function failedResult(input: {
     poolTwoAssignedAccountCount: input.poolTwoAssignedAccountCount ?? 0,
     failureCategory: input.failureCategory,
     failureStage: input.failureStage,
+    ...(input.providerErrorCode !== undefined ? { providerErrorCode: input.providerErrorCode } : {}),
   };
 }
 
@@ -273,6 +299,7 @@ export async function provisionRecentActiveAdAccounts(input: {
             poolOneAssignedAccountCount: poolOne.assignedCount,
             failureCategory: poolOne.failureCategory,
             failureStage: "pool_one_assignment",
+            providerErrorCode: poolOne.providerErrorCode,
           }),
           status: "partial",
         });
@@ -295,6 +322,7 @@ export async function provisionRecentActiveAdAccounts(input: {
             poolTwoAssignedAccountCount: poolTwo.assignedCount,
             failureCategory: poolTwo.failureCategory,
             failureStage: "pool_two_assignment",
+            providerErrorCode: poolTwo.providerErrorCode,
           }),
           status: "partial",
         });

@@ -18,6 +18,8 @@ assert.doesNotMatch(source, /pool_validation/);
 assert.match(source, /pool_one_assignment/);
 assert.match(source, /pool_two_assignment/);
 assert.match(source, /recordMetaActiveAccountProvisioningOutcome/);
+assert.match(source, /getGraphBatchProviderErrorCode/);
+assert.match(source, /providerErrorCode/);
 assert.match(source, /Meta's user token does not expose system-user read edges/);
 assert.doesNotMatch(source, /ads_management/);
 assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie/);

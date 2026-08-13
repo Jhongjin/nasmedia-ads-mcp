@@ -31,6 +31,11 @@ export type MetaProvisioningResult = {
   poolOneAssignedAccountCount: number;
   poolTwoAssignedAccountCount: number;
   failureCategory?: "configuration" | "permission" | "network" | "upstream";
+  /**
+   * A numeric Graph error code only. It is retained for safe operational
+   * diagnosis and never includes a Graph response, account reference, or token.
+   */
+  providerErrorCode?: number;
   failureStage?:
     | "active_account_scan"
     | "permission_check"

@@ -103,9 +103,10 @@ grant. The event table grants `service_role` only `SELECT` and `INSERT`; a
 database trigger rejects update or delete. Item records expire after 30 days.
 An account is a connection candidate only when Meta reported positive spend in
 the six-month window; ambiguous and failed reads are `unknown` and excluded.
-Provisioning audit events record only the result class, safe failure stage, and
-aggregate candidate/pool counts; they never record a selected account, OAuth
-token, system-user identifier, or Graph API response.
+Provisioning audit events record only the result class, safe failure stage,
+aggregate candidate/pool counts, and (on failure) a numeric provider error
+code. They never record a selected account, OAuth token, system-user
+identifier, or Graph API response.
 
 This changes only the selection-evidence phase. The subsequent account policy
 ledger and provider capability gate remain fail-closed until their own review
